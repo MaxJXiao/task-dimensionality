@@ -12,3 +12,5 @@ plots/
 *.ipynb
 .idea/
 .DS_Store
+generate_doc.py
+generate_colab_guide.py
