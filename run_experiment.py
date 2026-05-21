@@ -27,15 +27,18 @@ from datetime import timedelta
 import torch
 from transformers import AutoTokenizer
 
+from datasets import load_dataset
+
 from src.config import LORA_RANKS, INCLUDE_FULL_PARAM_BASELINE, TASK_REGISTRY, MODEL_REGISTRY, DEFAULT_MODEL
+from src.data_loader import get_dataloaders
 from src.model import get_lora_model, get_full_model, trainable_param_summary
-from src.train import train_one_run
+from src.train import train_one_run, evaluate_classification, evaluate_squad
 
 # ---------------------------------------------------------------------------
 # Condition list — order: cheapest first so partial runs are still useful
 # ---------------------------------------------------------------------------
 
-ALL_RANKS: list[str] = [str(r) for r in LORA_RANKS]
+ALL_RANKS: list[str] = ["baseline"] + [str(r) for r in LORA_RANKS]
 if INCLUDE_FULL_PARAM_BASELINE:
     ALL_RANKS.append("full")
 
@@ -156,6 +159,25 @@ def _save_summary(summary: dict, summary_path: str) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Zero-shot baseline (no training)
+# ---------------------------------------------------------------------------
+
+def _eval_baseline(task, model, tokenizer, device) -> float:
+    """Evaluate an untrained model and return its primary metric score."""
+    if not getattr(model, "hf_device_map", None):
+        model.to(device)
+    model.eval()
+    loaders = get_dataloaders(task, tokenizer)
+    if task.task_type == "classification":
+        return round(evaluate_classification(model, loaders["eval"], task, device), 4)
+    else:
+        raw_val = load_dataset(task.dataset_name, split="validation")
+        raw_lookup = {ex["id"]: ex for ex in raw_val}
+        f1, _ = evaluate_squad(model, loaders["eval"], loaders["eval_dataset"], raw_lookup, device)
+        return round(f1, 4)
+
+
+# ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
 
@@ -225,7 +247,11 @@ def main() -> None:
 
             # Fresh model every run — reusing would carry over learned weights
             # from the previous rank condition and corrupt the weight initialisation.
-            if rank_label == "full":
+            if rank_label == "baseline":
+                model = get_full_model(model_name, task.task_type, task.num_labels)
+                for p in model.parameters():
+                    p.requires_grad = False
+            elif rank_label == "full":
                 model = get_full_model(model_name, task.task_type, task.num_labels)
             else:
                 model = get_lora_model(int(rank_label), model_name, task.task_type, task.num_labels)
@@ -238,12 +264,15 @@ def main() -> None:
             status = "error"
 
             try:
-                log_rows = train_one_run(task, model, tokenizer, rank_label, device, model_name)
+                if rank_label == "baseline":
+                    final_metric = _eval_baseline(task, model, tokenizer, device)
+                else:
+                    log_rows = train_one_run(task, model, tokenizer, rank_label, device, model_name)
 
-                # Pull the final evaluated metric from the log
-                evaluated = [r for r in log_rows if r["test_metric"] != ""]
-                if evaluated:
-                    final_metric = evaluated[-1]["test_metric"]
+                    # Pull the final evaluated metric from the log
+                    evaluated = [r for r in log_rows if r["test_metric"] != ""]
+                    if evaluated:
+                        final_metric = evaluated[-1]["test_metric"]
                 status = "done"
 
             except Exception:
