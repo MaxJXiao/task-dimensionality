@@ -298,7 +298,7 @@ def get_dataloaders(
         train_ds,
         batch_size=training_cfg.batch_size,
         shuffle=True,
-        num_workers=4,
+        num_workers=2,
         pin_memory=True,   # async CPU→GPU transfer; free speedup on CUDA
     )
 
@@ -307,7 +307,7 @@ def get_dataloaders(
         eval_ds,
         batch_size=training_cfg.batch_size * 2,
         shuffle=False,
-        num_workers=4,
+        num_workers=2,
         pin_memory=True,
         collate_fn=_squad_eval_collate if is_squad_eval else None,
     )
