@@ -96,8 +96,12 @@ def evaluate_classification(
             metric.add_batch(predictions=preds.cpu(), references=labels.cpu())
     model.train()
     result = metric.compute()
-    # metric.compute() returns e.g. {"accuracy": 0.93} or {"matthews_correlation": 0.61}
-    return float(list(result.values())[0])
+    score = float(list(result.values())[0])
+    # MCC is in [-1, 1]; scale to percentage points so all metrics share the
+    # same 0-100 scale as the SOTA baselines in TaskConfig.
+    if task.metric == "matthews_correlation":
+        score *= 100
+    return score
 
 
 # ---------------------------------------------------------------------------

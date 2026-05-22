@@ -112,7 +112,7 @@ class TrainingConfig:
     learning_rate: float = 2e-5 #3e-4 might be too aggressive for roberta-base, but i should change it back for Llama models
     batch_size: int = 32
     gradient_accumulation_steps: int = 1
-    num_epochs: int = 10 # train to overfit
+    num_epochs: int = 20 # train to overfit
     warmup_ratio: float = 0.06
     weight_decay: float = 0.01
     max_grad_norm: float = 1.0
@@ -149,8 +149,10 @@ class TaskConfig:
     max_eval_samples: Optional[int] = None
 
 
-MAX_TRAIN_SAMPLES: Optional[int] = None
-MAX_EVAL_SAMPLES:  Optional[int] = None
+# MAX_TRAIN_SAMPLES: Optional[int] = None
+# MAX_EVAL_SAMPLES:  Optional[int] = None
+MAX_TRAIN_SAMPLES: Optional[int] = 2000
+MAX_EVAL_SAMPLES:  Optional[int] = 500
 
 
 TASKS: List[TaskConfig] = [
