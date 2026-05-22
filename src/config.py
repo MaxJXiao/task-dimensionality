@@ -12,7 +12,7 @@ from typing import List, Optional
 # LoRA sweep
 # ---------------------------------------------------------------------------
 
-LORA_RANKS: List[int] = [1, 2, 4, 8, 16, 32, 64]
+LORA_RANKS: List[int] = [1, 2, 4, 8, 16, 32, 64]#, 128, 256, 512]
 
 LORA_ALPHA_MULTIPLIER: float = 2.0  # alpha = rank * multiplier; keeps effective scale constant across ranks
 LORA_DROPOUT: float = 0.05
@@ -108,10 +108,10 @@ DEFAULT_MODEL: str = MODELS[0].hf_name
 
 @dataclass
 class TrainingConfig:
-    learning_rate: float = 2e-5 #3e-4 might be too aggressive for roberta-base, but i should change it back for Llama models
+    learning_rate: float = 1e-4 #2e-5 last run
     batch_size: int = 32
     gradient_accumulation_steps: int = 1
-    num_epochs: int = 50 # train to overfit
+    num_epochs: int = 30 #50 # train to overfit
     warmup_ratio: float = 0.06
     weight_decay: float = 0.01
     max_grad_norm: float = 1.0
