@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import argparse
 import glob
+import json
 from pathlib import Path
 
 import numpy as np
@@ -34,7 +35,6 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import matplotlib.cm as cm
-from matplotlib.lines import Line2D
 
 from src.config import LORA_RANKS, TASK_REGISTRY, TaskConfig, MODELS, MODEL_REGISTRY
 
@@ -54,6 +54,9 @@ SOTA_COLOR = "crimson"
 SOTA_LINESTYLE = ":"
 RANK_LINEWIDTH = 1.5
 ALPHA = 0.85
+ZEROSHOT_COLOR = "steelblue"
+ZEROSHOT_LINESTYLE = "-."
+ZEROSHOT_LINEWIDTH = 1.5
 
 ALL_RANK_LABELS: list[str] = [str(r) for r in LORA_RANKS] + ["full"]
 
@@ -107,6 +110,27 @@ def load_results(
 
 
 # ---------------------------------------------------------------------------
+# Zero-shot scores
+# ---------------------------------------------------------------------------
+
+def load_zero_shot_scores(model_slug: str) -> dict[str, float]:
+    """Return {task_name: score} for all baseline entries in run_summary.json."""
+    path = RESULTS_DIR / model_slug / "run_summary.json"
+    if not path.exists():
+        return {}
+    with open(path) as f:
+        summary = json.load(f)
+    scores: dict[str, float] = {}
+    for key, val in summary.items():
+        if key.endswith("/baseline") and val.get("status") == "done":
+            task_name = key.split("/")[0]
+            metric = val.get("final_metric")
+            if isinstance(metric, (int, float)):
+                scores[task_name] = float(metric)
+    return scores
+
+
+# ---------------------------------------------------------------------------
 # Rank sweep plot (per model × task)
 # ---------------------------------------------------------------------------
 
@@ -125,6 +149,7 @@ def plot_rank_sweep(
     task_name: str,
     task_data: dict[str, pd.DataFrame],
     task_cfg: TaskConfig,
+    zero_shot_score: float | None = None,
 ) -> Path:
     """
     Plot test metric vs step for all rank conditions of one (model, task) pair.
@@ -150,6 +175,10 @@ def plot_rank_sweep(
                linewidth=1.5, label=f"Published baseline ({task_cfg.sota_baseline})")
     ax.axhspan(task_cfg.sota_baseline - REQUISITE_THRESHOLD, task_cfg.sota_baseline,
                alpha=0.06, color=SOTA_COLOR, label=f"±{REQUISITE_THRESHOLD}-pt threshold")
+    if zero_shot_score is not None:
+        ax.axhline(y=zero_shot_score, color=ZEROSHOT_COLOR, linestyle=ZEROSHOT_LINESTYLE,
+                   linewidth=ZEROSHOT_LINEWIDTH, alpha=ALPHA,
+                   label=f"Zero-shot ({zero_shot_score:.3f})")
 
     sm = cm.ScalarMappable(cmap=RANK_CMAP,
                            norm=plt.Normalize(vmin=LORA_RANKS[0], vmax=LORA_RANKS[-1]))
@@ -439,6 +468,7 @@ def main() -> None:
 
     # --- Per-(model, task) rank sweep plots ---
     for model_slug in model_slugs:
+        zero_shot_scores = load_zero_shot_scores(model_slug)
         for task_name in task_names:
             task_cfg = TASK_REGISTRY[task_name]
 
@@ -452,7 +482,8 @@ def main() -> None:
                 print(f"[SKIP] No results for {MODEL_DISPLAY.get(model_slug, model_slug)} / {task_name}")
                 continue
 
-            out_path = plot_rank_sweep(model_slug, task_name, task_data, task_cfg)
+            out_path = plot_rank_sweep(model_slug, task_name, task_data, task_cfg,
+                                       zero_shot_scores.get(task_name))
             print(f"[PLOT] {MODEL_DISPLAY.get(model_slug, model_slug)} / {task_cfg.display_name} → {out_path}")
 
             req_rank, peak = compute_requisite_rank(task_data, task_cfg.sota_baseline)
