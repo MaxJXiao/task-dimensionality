@@ -149,6 +149,11 @@ class TaskConfig:
     max_eval_samples: Optional[int] = None
 
 
+# TODO: set both back to None for full-dataset runs
+MAX_TRAIN_SAMPLES: Optional[int] = 2000
+MAX_EVAL_SAMPLES:  Optional[int] = 500
+
+
 TASKS: List[TaskConfig] = [
     TaskConfig(
         name="sst2",
@@ -165,6 +170,8 @@ TASKS: List[TaskConfig] = [
         task_type="classification",
         label_names=["negative", "positive"],
         max_input_length=64,
+        max_train_samples=MAX_TRAIN_SAMPLES,
+        max_eval_samples=MAX_EVAL_SAMPLES,
     ),
     TaskConfig(
         name="cola",
@@ -181,6 +188,8 @@ TASKS: List[TaskConfig] = [
         task_type="classification",
         label_names=["unacceptable", "acceptable"],
         max_input_length=64,
+        max_train_samples=MAX_TRAIN_SAMPLES,
+        max_eval_samples=MAX_EVAL_SAMPLES,
     ),
     TaskConfig(
         name="snli",
@@ -197,6 +206,8 @@ TASKS: List[TaskConfig] = [
         task_type="classification",
         label_names=["entailment", "neutral", "contradiction"],
         max_input_length=128,
+        max_train_samples=MAX_TRAIN_SAMPLES,
+        max_eval_samples=MAX_EVAL_SAMPLES,
     ),
     TaskConfig(
         name="squad2",
@@ -213,6 +224,8 @@ TASKS: List[TaskConfig] = [
         task_type="span_extraction",
         label_names=[],
         max_input_length=384,                  # QA contexts are longer
+        max_train_samples=MAX_TRAIN_SAMPLES,
+        max_eval_samples=MAX_EVAL_SAMPLES,
     ),
 ]
 
