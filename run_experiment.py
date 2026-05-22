@@ -188,12 +188,17 @@ def main() -> None:
     model_slug = model_name.replace("/", "--")
     summary_path = os.path.join(RESULTS_DIR, model_slug, "run_summary.json")
 
-    # Validate and resolve --rank
+    model_cfg = MODEL_REGISTRY[model_name]
+
+    # Validate and resolve --rank, then cap to model's max_lora_rank
     if args.rank is not None:
         _validate_rank(args.rank)
         rank_conditions = [args.rank]
     else:
-        rank_conditions = ALL_RANKS
+        rank_conditions = [
+            r for r in ALL_RANKS
+            if r in ("baseline", "full") or int(r) <= model_cfg.max_lora_rank
+        ]
 
     task_names = [args.task] if args.task else ALL_TASKS
 
@@ -216,7 +221,6 @@ def main() -> None:
     # Tokenizer is stateless after setup, so one load serves all 32 runs.
     print(f"Loading tokenizer ({model_name}) ...")
     tokenizer = AutoTokenizer.from_pretrained(model_name)
-    model_cfg = MODEL_REGISTRY[model_name]
     if model_cfg.architecture == "decoder":
         # Decoder models must pad on the left so the causal attention mask
         # never attends to padding tokens that precede the real sequence.

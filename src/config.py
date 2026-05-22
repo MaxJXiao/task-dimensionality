@@ -12,7 +12,7 @@ from typing import List, Optional
 # LoRA sweep
 # ---------------------------------------------------------------------------
 
-LORA_RANKS: List[int] = [8, 16, 32, 64, 128]#[1, 2, 4, 8, 16, 32, 64]#, 128, 256, 512]
+LORA_RANKS: List[int] = [1, 2, 4, 8, 16, 32, 64, 128, 256, 512]
 
 LORA_ALPHA_MULTIPLIER: float = 2.0  # alpha = rank * multiplier; keeps effective scale constant across ranks
 LORA_DROPOUT: float = 0.05
@@ -35,6 +35,7 @@ class ModelConfig:
     params: str
     architecture: str                    # "encoder" | "decoder"
     lora_target_modules: List[str]
+    max_lora_rank: int = 512             # cap at 50% of hidden dim to stay below full rank
     learning_rate: Optional[float] = None  # overrides TrainingConfig.learning_rate when set
 
 
@@ -44,42 +45,49 @@ MODELS: List[ModelConfig] = [
         params="125M",
         architecture="encoder",
         lora_target_modules=["query", "key", "value", "dense"],
+        max_lora_rank=512,
     ),
     ModelConfig(
         hf_name="roberta-large",
         params="355M",
         architecture="encoder",
         lora_target_modules=["query", "key", "value", "dense"],
+        max_lora_rank=512,
     ),
     ModelConfig(
         hf_name="google/bert_uncased_L-2_H-128_A-2",
         params="4M",
         architecture="encoder",
         lora_target_modules=["query", "key", "value", "dense"],
+        max_lora_rank=64,
     ),
     ModelConfig(
         hf_name="google/bert_uncased_L-4_H-256_A-4",
         params="11M",
         architecture="encoder",
         lora_target_modules=["query", "key", "value", "dense"],
+        max_lora_rank=128,
     ),
     ModelConfig(
         hf_name="google/bert_uncased_L-4_H-512_A-8",
         params="29M",
         architecture="encoder",
         lora_target_modules=["query", "key", "value", "dense"],
+        max_lora_rank=256,
     ),
     ModelConfig(
         hf_name="bert-base-uncased",
         params="110M",
         architecture="encoder",
         lora_target_modules=["query", "key", "value", "dense"],
+        max_lora_rank=512,
     ),
     ModelConfig(
         hf_name="bert-large-uncased",
         params="336M",
         architecture="encoder",
         lora_target_modules=["query", "key", "value", "dense"],
+        max_lora_rank=512,
     ),
     # ModelConfig(
     #     hf_name="meta-llama/Llama-3.2-1B",
@@ -108,10 +116,10 @@ DEFAULT_MODEL: str = MODELS[0].hf_name
 
 @dataclass
 class TrainingConfig:
-    learning_rate: float = 1e-4 #2e-5 last run
+    learning_rate: float = 2e-5
     batch_size: int = 32
     gradient_accumulation_steps: int = 1
-    num_epochs: int = 30 #50 # train to overfit
+    num_epochs: int = 50 # train to overfit
     warmup_ratio: float = 0.06
     weight_decay: float = 0.01
     max_grad_norm: float = 1.0
@@ -148,10 +156,10 @@ class TaskConfig:
     max_eval_samples: Optional[int] = None
 
 
-# MAX_TRAIN_SAMPLES: Optional[int] = None
-# MAX_EVAL_SAMPLES:  Optional[int] = None
-MAX_TRAIN_SAMPLES: Optional[int] = 2000
-MAX_EVAL_SAMPLES:  Optional[int] = 500
+MAX_TRAIN_SAMPLES: Optional[int] = None
+MAX_EVAL_SAMPLES:  Optional[int] = None
+# MAX_TRAIN_SAMPLES: Optional[int] = 2000
+# MAX_EVAL_SAMPLES:  Optional[int] = 500
 
 
 TASKS: List[TaskConfig] = [
