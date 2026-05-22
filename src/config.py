@@ -8,7 +8,6 @@ parameters hurt rather than help, and R* is a property of the task, not the mode
 from dataclasses import dataclass, field
 from typing import List, Optional
 
-
 # ---------------------------------------------------------------------------
 # LoRA sweep
 # ---------------------------------------------------------------------------
@@ -112,7 +111,7 @@ class TrainingConfig:
     learning_rate: float = 2e-5 #3e-4 might be too aggressive for roberta-base, but i should change it back for Llama models
     batch_size: int = 32
     gradient_accumulation_steps: int = 1
-    num_epochs: int = 20 # train to overfit
+    num_epochs: int = 50 # train to overfit
     warmup_ratio: float = 0.06
     weight_decay: float = 0.01
     max_grad_norm: float = 1.0
