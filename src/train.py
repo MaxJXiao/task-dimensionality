@@ -99,7 +99,7 @@ def evaluate_classification(
     score = float(list(result.values())[0])
     # MCC is in [-1, 1]; scale to percentage points so all metrics share the
     # same 0-100 scale as the SOTA baselines in TaskConfig.
-    if task.metric == "matthews_correlation":
+    if task.metric in ("matthews_correlation", "accuracy"):
         score *= 100
     return score
 
