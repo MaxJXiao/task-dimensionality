@@ -156,10 +156,8 @@ class TaskConfig:
     max_eval_samples: Optional[int] = None
 
 
-MAX_TRAIN_SAMPLES: Optional[int] = None
-MAX_EVAL_SAMPLES:  Optional[int] = None
-# MAX_TRAIN_SAMPLES: Optional[int] = 2000
-# MAX_EVAL_SAMPLES:  Optional[int] = 500
+MAX_TRAIN_SAMPLES: Optional[int] = 10000
+MAX_EVAL_SAMPLES:  Optional[int] = 2000
 
 
 TASKS: List[TaskConfig] = [
@@ -214,8 +212,8 @@ TASKS: List[TaskConfig] = [
         task_type="classification",
         label_names=["entailment", "neutral", "contradiction"],
         max_input_length=128,
-        max_train_samples=80000,
-        max_eval_samples=2000,
+        max_train_samples=MAX_TRAIN_SAMPLES,
+        max_eval_samples=MAX_EVAL_SAMPLES,
     ),
     TaskConfig(
         name="squad2",
@@ -232,8 +230,8 @@ TASKS: List[TaskConfig] = [
         task_type="span_extraction",
         label_names=[],
         max_input_length=384,                  # QA contexts are longer
-        max_train_samples=80000,
-        max_eval_samples=2000,
+        max_train_samples=MAX_TRAIN_SAMPLES,
+        max_eval_samples=MAX_EVAL_SAMPLES,
     ),
 ]
 
