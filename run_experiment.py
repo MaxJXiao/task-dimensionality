@@ -2,7 +2,7 @@
 """
 run_experiment.py — master runner for the LoRA rank sweep.
 
-Executes 4 tasks × 9 conditions (7 LoRA ranks + zero-shot baseline + full fine-tuning) = 36 runs.
+Executes 4 tasks × 12 conditions (10 LoRA ranks + zero-shot baseline + full fine-tuning) = 48 runs.
 Results are saved to results/{task}/{rank}/training_log.csv after each run.
 
 Usage
