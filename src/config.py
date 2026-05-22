@@ -214,8 +214,8 @@ TASKS: List[TaskConfig] = [
         task_type="classification",
         label_names=["entailment", "neutral", "contradiction"],
         max_input_length=128,
-        max_train_samples=MAX_TRAIN_SAMPLES,
-        max_eval_samples=MAX_EVAL_SAMPLES,
+        max_train_samples=80000,
+        max_eval_samples=2000,
     ),
     TaskConfig(
         name="squad2",
@@ -232,8 +232,8 @@ TASKS: List[TaskConfig] = [
         task_type="span_extraction",
         label_names=[],
         max_input_length=384,                  # QA contexts are longer
-        max_train_samples=MAX_TRAIN_SAMPLES,
-        max_eval_samples=MAX_EVAL_SAMPLES,
+        max_train_samples=80000,
+        max_eval_samples=2000,
     ),
 ]
 
