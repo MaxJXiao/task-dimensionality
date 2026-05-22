@@ -1,16 +1,17 @@
 """
 eval_baseline.py
 ----------------
-Evaluate untrained (zero-shot) roberta-base on all four experiment tasks.
+Evaluate an untrained (zero-shot) model on all four experiment tasks.
 
 Loads the model with no LoRA adapters and no training, runs the same
 evaluation functions used by train.py, and saves results to:
-    results/roberta-base/baseline/baseline_results.json
+    results/<model-slug>/baseline/baseline_results.json
 
 Usage:
-    python eval_baseline.py                        # all 4 tasks
-    python eval_baseline.py --task cola            # single task
-    python eval_baseline.py --device cpu           # force CPU
+    python eval_baseline.py                                   # all 4 tasks, default model
+    python eval_baseline.py --task cola                       # single task
+    python eval_baseline.py --model bert-base-uncased         # different model
+    python eval_baseline.py --device cpu                      # force CPU
 """
 
 import argparse
@@ -22,39 +23,27 @@ import torch
 from datasets import load_dataset
 from transformers import AutoTokenizer, AutoModelForSequenceClassification, AutoModelForQuestionAnswering
 
-from src.config import TASK_REGISTRY, DEFAULT_MODEL, RESULTS_DIR
+from src.config import TASK_REGISTRY, DEFAULT_MODEL, MODEL_REGISTRY, RESULTS_DIR
 from src.data_loader import get_dataloaders
 from src.train import evaluate_classification, evaluate_squad
 
-
-# ---------------------------------------------------------------------------
-# Constants
-# ---------------------------------------------------------------------------
-MODEL_NAME  = DEFAULT_MODEL
-MODEL_SLUG  = MODEL_NAME.replace("/", "--")
-OUTPUT_DIR  = os.path.join(RESULTS_DIR, MODEL_SLUG, "baseline")
-OUTPUT_FILE = os.path.join(OUTPUT_DIR, "baseline_results.json")
-TASK_ORDER  = list(TASK_REGISTRY.keys())
+TASK_ORDER = list(TASK_REGISTRY.keys())
 
 
 # ---------------------------------------------------------------------------
 # Model loader (no LoRA, no training)
 # ---------------------------------------------------------------------------
-def load_baseline_model(task, device):
-    """
-    Load roberta-base with the correct head for the task, all weights frozen.
-    We don't actually freeze them (eval mode is enough), but we never call
-    an optimiser, so parameters are never updated.
-    """
+def load_baseline_model(task, device, model_name):
+    """Load the model with the correct head for the task. Weights are not updated."""
     task_cfg = TASK_REGISTRY[task]
 
     if task_cfg.task_type == "classification":
         model = AutoModelForSequenceClassification.from_pretrained(
-            MODEL_NAME,
+            model_name,
             num_labels=task_cfg.num_labels,
         )
     else:  # span_extraction
-        model = AutoModelForQuestionAnswering.from_pretrained(MODEL_NAME)
+        model = AutoModelForQuestionAnswering.from_pretrained(model_name)
 
     model.eval()
     model.to(device)
@@ -64,22 +53,18 @@ def load_baseline_model(task, device):
 # ---------------------------------------------------------------------------
 # Single-task evaluation
 # ---------------------------------------------------------------------------
-def eval_one_task(task_name, device):
+def eval_one_task(task_name, device, model_name, tokenizer):
     print(f"\n{'='*60}")
     print(f"  Task: {task_name.upper()}")
     print(f"{'='*60}")
 
-    task_cfg  = TASK_REGISTRY[task_name]
-
-    # Tokenizer — same setup as run_experiment.py
-    tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
-    # (roberta-base is an encoder; no left-padding or pad_token fixups needed)
+    task_cfg = TASK_REGISTRY[task_name]
 
     print("  Loading data...")
     dataloaders = get_dataloaders(task_cfg, tokenizer)
 
     print("  Loading untrained model...")
-    model = load_baseline_model(task_name, device)
+    model = load_baseline_model(task_name, device, model_name)
 
     print("  Running evaluation...")
     t0 = time.time()
@@ -120,30 +105,48 @@ def eval_one_task(task_name, device):
 # Main
 # ---------------------------------------------------------------------------
 def main():
-    parser = argparse.ArgumentParser(description="Evaluate untrained roberta-base baseline.")
+    parser = argparse.ArgumentParser(description="Evaluate an untrained model baseline.")
     parser.add_argument("--task",   type=str, default=None,
                         help="Single task to evaluate (cola | sst2 | snli | squad2). "
                              "Omit to run all four.")
+    parser.add_argument("--model", type=str, default=DEFAULT_MODEL,
+                        choices=list(MODEL_REGISTRY.keys()),
+                        help=f"Model to evaluate. Default: {DEFAULT_MODEL}")
     parser.add_argument("--device", type=str, default=None,
                         help="Force device (cuda | cpu). Auto-detected if omitted.")
     args = parser.parse_args()
+
+    model_name = args.model
+    model_slug = model_name.replace("/", "--")
+    output_dir  = os.path.join(RESULTS_DIR, model_slug, "baseline")
+    output_file = os.path.join(output_dir, "baseline_results.json")
 
     # Device
     if args.device:
         device = torch.device(args.device)
     else:
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    print(f"\nDevice: {device}")
+    print(f"\nModel : {model_name}")
+    print(f"Device: {device}")
+
+    # Tokenizer — shared across all tasks for this model
+    tokenizer = AutoTokenizer.from_pretrained(model_name)
+    model_cfg = MODEL_REGISTRY[model_name]
+    if model_cfg.architecture == "decoder":
+        tokenizer.padding_side = "left"
+        if tokenizer.pad_token is None:
+            tokenizer.pad_token = tokenizer.eos_token
+            tokenizer.pad_token_id = tokenizer.eos_token_id
 
     # Tasks to run
     tasks = [args.task] if args.task else TASK_ORDER
 
     # Load existing results so we can append without re-running completed tasks
-    os.makedirs(OUTPUT_DIR, exist_ok=True)
-    if os.path.exists(OUTPUT_FILE):
-        with open(OUTPUT_FILE) as f:
+    os.makedirs(output_dir, exist_ok=True)
+    if os.path.exists(output_file):
+        with open(output_file) as f:
             all_results = json.load(f)
-        print(f"\nLoaded {len(all_results)} existing baseline result(s) from {OUTPUT_FILE}")
+        print(f"\nLoaded {len(all_results)} existing baseline result(s) from {output_file}")
     else:
         all_results = {}
 
@@ -154,28 +157,28 @@ def main():
             continue
 
         if task_name in all_results:
-            print(f"\n[SKIP] {task_name} already in {OUTPUT_FILE}")
+            print(f"\n[SKIP] {task_name} already in {output_file}")
             continue
 
         try:
-            result = eval_one_task(task_name, device)
+            result = eval_one_task(task_name, device, model_name, tokenizer)
             all_results[task_name] = result
 
             # Save after every task (safe against disconnections)
-            with open(OUTPUT_FILE, "w") as f:
+            with open(output_file, "w") as f:
                 json.dump(all_results, f, indent=2)
-            print(f"  Saved → {OUTPUT_FILE}")
+            print(f"  Saved → {output_file}")
 
         except Exception as e:
             print(f"\n[ERROR] {task_name} failed: {e}")
             import traceback; traceback.print_exc()
             all_results[task_name] = {"task": task_name, "status": "error", "error": str(e)}
-            with open(OUTPUT_FILE, "w") as f:
+            with open(output_file, "w") as f:
                 json.dump(all_results, f, indent=2)
 
     # Final summary
     print(f"\n{'='*60}")
-    print("  BASELINE SUMMARY (untrained roberta-base)")
+    print(f"  BASELINE SUMMARY (untrained {model_name})")
     print(f"{'='*60}")
     for task_name, r in all_results.items():
         if r.get("status") == "error":
@@ -186,7 +189,7 @@ def main():
         else:
             print(f"  {task_name:8s}  {r['metric']}={r['score']:.4f}  "
                   f"(SOTA {r['sota']}, gap {r['gap_to_sota']:+.2f})")
-    print(f"\nFull results: {OUTPUT_FILE}")
+    print(f"\nFull results: {output_file}")
 
 
 if __name__ == "__main__":

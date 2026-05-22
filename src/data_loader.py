@@ -18,11 +18,11 @@ and example_id are needed by the trainer to post-process logits into text spans.
 from __future__ import annotations
 
 import torch
+from datasets import Dataset, load_dataset
 from torch.utils.data import DataLoader
-from datasets import load_dataset, Dataset
 from transformers import PreTrainedTokenizerBase
 
-from src.config import TaskConfig, TrainingConfig, TRAINING
+from src.config import TRAINING, TaskConfig, TrainingConfig
 
 # 128-token overlap between consecutive windows so answers that straddle a
 # boundary appear fully inside at least one window and are not missed.
@@ -37,7 +37,7 @@ def load_raw_dataset(task: TaskConfig, split: str) -> Dataset:
     """Fetch the raw HuggingFace dataset for *task* and *split*."""
     if task.name == "snli":
         ds = load_dataset("snli", split=split)
-        # label == -1 means annotators couldn't agree; these rows have no ground truth.
+        # label == -1 means annotators couldn't agree; these rows have no ground truth. Thus, filter out these samples.
         ds = ds.filter(lambda ex: ex["label"] != -1)
     elif task.name == "squad2":
         ds = load_dataset("rajpurkar/squad_v2", split=split)
@@ -240,7 +240,10 @@ def build_dataset(
             fn_kwargs={"tokenizer": tokenizer, "task": task},
             remove_columns=raw.column_names,
         )
-        ds.set_format("torch", columns=["input_ids", "attention_mask", "labels"])
+        fmt_cols = ["input_ids", "attention_mask", "labels"]
+        if "token_type_ids" in ds.column_names:
+            fmt_cols = ["input_ids", "attention_mask", "token_type_ids", "labels"]
+        ds.set_format("torch", columns=fmt_cols)
 
     elif task.task_type == "span_extraction":
         is_train = split == "train"
@@ -251,19 +254,19 @@ def build_dataset(
             fn_kwargs={"tokenizer": tokenizer, "max_length": task.max_input_length},
             remove_columns=raw.column_names,
         )
+        has_tti = "token_type_ids" in ds.column_names
         if is_train:
-            ds.set_format(
-                "torch",
-                columns=["input_ids", "attention_mask", "start_positions", "end_positions"],
-            )
+            fmt_cols = ["input_ids", "attention_mask", "start_positions", "end_positions"]
+            if has_tti:
+                fmt_cols = ["input_ids", "attention_mask", "token_type_ids", "start_positions", "end_positions"]
+            ds.set_format("torch", columns=fmt_cols)
         else:
             # output_all_columns=True keeps offset_mapping and example_id accessible
             # alongside the tensor columns; without it set_format silently drops them.
-            ds.set_format(
-                "torch",
-                columns=["input_ids", "attention_mask"],
-                output_all_columns=True,
-            )
+            fmt_cols = ["input_ids", "attention_mask"]
+            if has_tti:
+                fmt_cols.append("token_type_ids")
+            ds.set_format("torch", columns=fmt_cols, output_all_columns=True)
 
     else:
         raise ValueError(f"Unknown task_type: {task.task_type!r}")

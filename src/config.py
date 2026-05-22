@@ -36,6 +36,7 @@ class ModelConfig:
     params: str
     architecture: str                    # "encoder" | "decoder"
     lora_target_modules: List[str]
+    learning_rate: Optional[float] = None  # overrides TrainingConfig.learning_rate when set
 
 
 MODELS: List[ModelConfig] = [
@@ -52,17 +53,49 @@ MODELS: List[ModelConfig] = [
         lora_target_modules=["query", "key", "value", "dense"],
     ),
     ModelConfig(
-        hf_name="meta-llama/Llama-3.2-1B",
-        params="1B",
-        architecture="decoder",
-        lora_target_modules=["q_proj", "v_proj"],
+        hf_name="google/bert_uncased_L-2_H-128_A-2",
+        params="4M",
+        architecture="encoder",
+        lora_target_modules=["query", "key", "value", "dense"],
     ),
     ModelConfig(
-        hf_name="meta-llama/Llama-3.2-3B",
-        params="3B",
-        architecture="decoder",
-        lora_target_modules=["q_proj", "v_proj"],
+        hf_name="google/bert_uncased_L-4_H-256_A-4",
+        params="11M",
+        architecture="encoder",
+        lora_target_modules=["query", "key", "value", "dense"],
     ),
+    ModelConfig(
+        hf_name="google/bert_uncased_L-4_H-512_A-8",
+        params="29M",
+        architecture="encoder",
+        lora_target_modules=["query", "key", "value", "dense"],
+    ),
+    ModelConfig(
+        hf_name="bert-base-uncased",
+        params="110M",
+        architecture="encoder",
+        lora_target_modules=["query", "key", "value", "dense"],
+    ),
+    ModelConfig(
+        hf_name="bert-large-uncased",
+        params="336M",
+        architecture="encoder",
+        lora_target_modules=["query", "key", "value", "dense"],
+    ),
+    # ModelConfig(
+    #     hf_name="meta-llama/Llama-3.2-1B",
+    #     params="1B",
+    #     architecture="decoder",
+    #     lora_target_modules=["q_proj", "v_proj"],
+    #     learning_rate=3e-4,
+    # ),
+    # ModelConfig(
+    #     hf_name="meta-llama/Llama-3.2-3B",
+    #     params="3B",
+    #     architecture="decoder",
+    #     lora_target_modules=["q_proj", "v_proj"],
+    #     learning_rate=3e-4,
+    # ),
 ]
 
 MODEL_REGISTRY: dict[str, ModelConfig] = {m.hf_name: m for m in MODELS}
@@ -76,16 +109,17 @@ DEFAULT_MODEL: str = MODELS[0].hf_name
 
 @dataclass
 class TrainingConfig:
-    learning_rate: float = 3e-4
+    learning_rate: float = 2e-5 #3e-4 might be too aggressive for roberta-base, but i should change it back for Llama models
     batch_size: int = 32
     gradient_accumulation_steps: int = 1
-    num_epochs: int = 5
+    num_epochs: int = 10 # train to overfit
     warmup_ratio: float = 0.06
     weight_decay: float = 0.01
     max_grad_norm: float = 1.0
     fp16: bool = True
     seed: int = 42
     eval_steps: int = 100          # evaluate every N optimizer steps
+    # early stoppping is deliberately removed
 
 
 TRAINING = TrainingConfig()

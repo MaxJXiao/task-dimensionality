@@ -4,9 +4,9 @@ Training loop for the LoRA rank sweep experiment.
 Design constraints
 ------------------
 - Fixed-length training: no early stopping, no validation gating.
-  NUM_EPOCHS (~3× typical RoBERTa GLUE convergence) ensures we run well past
-  convergence so per-rank overfitting / plateau dynamics are visible.
-- Test-set metric is logged every EVAL_EVERY optimizer steps.
+  TrainingConfig.num_epochs ensures we run well past convergence so per-rank
+  overfitting / plateau dynamics are visible.
+- Test-set metric is logged every TrainingConfig.eval_steps optimizer steps.
 - Training loss is logged at every step.
 - One CSV per (task, rank) at results/{task}/{rank}/training_log.csv
   with columns: step, train_loss, test_metric.
@@ -28,18 +28,12 @@ import evaluate as hf_evaluate
 from datasets import load_dataset
 from tqdm import tqdm
 
-from src.config import TaskConfig, TrainingConfig, TRAINING
+from src.config import TaskConfig, TrainingConfig, TRAINING, MODEL_REGISTRY
 from src.data_loader import get_dataloaders
 
 # ---------------------------------------------------------------------------
 # Experiment hyperparameters
 # ---------------------------------------------------------------------------
-
-LR: float = 2e-5
-WEIGHT_DECAY: float = 0.01
-NUM_EPOCHS: int = 10       # ~3× the typical 3-epoch GLUE convergence for RoBERTa
-
-EVAL_EVERY: int = 200      # steps between test-set evaluations
 
 BATCH_SIZE_CLS: int = 32
 BATCH_SIZE_SQUAD: int = 16     # SQuAD sequences are 384 tokens; half the batch to stay within memory
@@ -201,9 +195,13 @@ def evaluate_squad(
 
     with torch.no_grad():
         for batch in eval_loader:
-            input_ids = batch["input_ids"].to(device)
-            attention_mask = batch["attention_mask"].to(device)
-            outputs = model(input_ids=input_ids, attention_mask=attention_mask)
+            fwd = {
+                "input_ids": batch["input_ids"].to(device),
+                "attention_mask": batch["attention_mask"].to(device),
+            }
+            if isinstance(batch.get("token_type_ids"), torch.Tensor):
+                fwd["token_type_ids"] = batch["token_type_ids"].to(device)
+            outputs = model(**fwd)
             all_start.append(outputs.start_logits.cpu().numpy())
             all_end.append(outputs.end_logits.cpu().numpy())
 
@@ -249,6 +247,9 @@ def train_one_run(
     """
     out_dir = _output_dir(task.name, rank_label, model_name)
     training_cfg = _training_cfg_for_task(task)
+    model_cfg = MODEL_REGISTRY[model_name]
+    if model_cfg.learning_rate is not None:
+        training_cfg = replace(training_cfg, learning_rate=model_cfg.learning_rate)
 
     loaders = get_dataloaders(task, tokenizer, training_cfg)
     train_loader = loaders["train"]
@@ -268,25 +269,25 @@ def train_one_run(
         model = model.to(device)
     model.train()
 
-    total_steps = NUM_EPOCHS * len(train_loader)
+    total_steps = training_cfg.num_epochs * len(train_loader)
     optimizer = AdamW(
         [p for p in model.parameters() if p.requires_grad],
-        lr=LR,
-        weight_decay=WEIGHT_DECAY,
+        lr=training_cfg.learning_rate,
+        weight_decay=training_cfg.weight_decay,
     )
     scheduler = get_linear_schedule_with_warmup(
         optimizer,
-        num_warmup_steps=int(0.06 * total_steps),
+        num_warmup_steps=int(training_cfg.warmup_ratio * total_steps),
         num_training_steps=total_steps,
     )
 
     log_rows: list[dict] = []
     global_step = 0
 
-    for epoch in range(NUM_EPOCHS):
+    for epoch in range(training_cfg.num_epochs):
         pbar = tqdm(
             train_loader,
-            desc=f"[{task.name} | r={rank_label}] epoch {epoch + 1}/{NUM_EPOCHS}",
+            desc=f"[{task.name} | r={rank_label}] epoch {epoch + 1}/{training_cfg.num_epochs}",
         )
         for batch in pbar:
             batch = {k: v.to(device) for k, v in batch.items()}
@@ -294,7 +295,7 @@ def train_one_run(
             loss = outputs.loss
 
             loss.backward()
-            torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+            torch.nn.utils.clip_grad_norm_(model.parameters(), training_cfg.max_grad_norm)
             optimizer.step()
             scheduler.step()
             optimizer.zero_grad()
@@ -305,7 +306,7 @@ def train_one_run(
 
             test_metric: float | str = ""
             exact_match: float | str = ""
-            if global_step % EVAL_EVERY == 0:
+            if global_step % training_cfg.eval_steps == 0:
                 if task.task_type == "classification":
                     test_metric = round(
                         evaluate_classification(model, eval_loader, task, device), 4
@@ -324,7 +325,7 @@ def train_one_run(
 
     # If training ended on a non-eval step the last CSV row has no metric;
     # evaluate now so analysis always has a clean final data point.
-    if global_step % EVAL_EVERY != 0:
+    if global_step % training_cfg.eval_steps != 0:
         if task.task_type == "classification":
             final_score = evaluate_classification(model, eval_loader, task, device)
             log_rows[-1]["test_metric"] = round(final_score, 4)

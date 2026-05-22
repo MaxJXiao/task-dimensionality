@@ -3,10 +3,15 @@ Model loading and LoRA / QLoRA configuration for the rank sweep experiment.
 
 Supported models
 ----------------
-  roberta-base        125 M   encoder   Standard LoRA   Q/K/V/dense
-  roberta-large       355 M   encoder   Standard LoRA   Q/K/V/dense
-  Llama-3.2-1B          1 B   decoder   QLoRA  8-bit    q_proj/v_proj
-  Llama-3.2-3B          3 B   decoder   QLoRA  4-bit    q_proj/v_proj
+  roberta-base                   125 M   encoder   Standard LoRA   Q/K/V/dense
+  roberta-large                  355 M   encoder   Standard LoRA   Q/K/V/dense
+  bert_uncased_L-2_H-128_A-2      4 M   encoder   Standard LoRA   Q/K/V/dense
+  bert_uncased_L-4_H-256_A-4     11 M   encoder   Standard LoRA   Q/K/V/dense
+  bert_uncased_L-4_H-512_A-8     29 M   encoder   Standard LoRA   Q/K/V/dense
+  bert-base-uncased              110 M   encoder   Standard LoRA   Q/K/V/dense
+  bert-large-uncased             336 M   encoder   Standard LoRA   Q/K/V/dense
+  Llama-3.2-1B                     1 B   decoder   QLoRA  4-bit    q_proj/v_proj
+  Llama-3.2-3B                     3 B   decoder   QLoRA  4-bit    q_proj/v_proj
 
 Entry points
 ------------
@@ -17,36 +22,41 @@ Entry points
 
 from __future__ import annotations
 
-import torch
+# import torch  # re-enable for _BNBCONFIG_4BIT when Llama models are active
 from transformers import (
     AutoModelForSequenceClassification,
     AutoModelForQuestionAnswering,
-    BitsAndBytesConfig,
+    # BitsAndBytesConfig,  # re-enable when Llama models are active
 )
-from peft import LoraConfig, TaskType, get_peft_model, PeftModel, prepare_model_for_kbit_training
+from peft import LoraConfig, TaskType, get_peft_model, PeftModel  # , prepare_model_for_kbit_training
 
 from src.config import MODEL_REGISTRY, DEFAULT_MODEL
 
 
 # ---------------------------------------------------------------------------
-# Quantization configs (bitsandbytes)
+# Quantization configs (bitsandbytes) — re-enable when Llama models are active
 # ---------------------------------------------------------------------------
 
-_BNBCONFIG_8BIT = BitsAndBytesConfig(load_in_8bit=True)
+# _BNBCONFIG_8BIT = BitsAndBytesConfig(load_in_8bit=True)
 
-_BNBCONFIG_4BIT = BitsAndBytesConfig(
-    load_in_4bit=True,
-    bnb_4bit_compute_dtype=torch.float16,  # matmuls run in fp16 even though weights are stored in 4-bit
-    bnb_4bit_quant_type="nf4",             # NormalFloat4: optimal for normally-distributed LLM weights
-    bnb_4bit_use_double_quant=True,        # quantise the quantisation constants too (~0.4 bits/param saved)
-)
+# _BNBCONFIG_4BIT = BitsAndBytesConfig(
+#     load_in_4bit=True,
+#     bnb_4bit_compute_dtype=torch.float16,
+#     bnb_4bit_quant_type="nf4",
+#     bnb_4bit_use_double_quant=True,
+# )
 
 # Maps each supported model to its quantization config (None = no quantization).
-_QUANT_MAP: dict[str, BitsAndBytesConfig | None] = {
-    "roberta-base":             None,
-    "roberta-large":            None,
-    "meta-llama/Llama-3.2-1B": _BNBCONFIG_8BIT,
-    "meta-llama/Llama-3.2-3B": _BNBCONFIG_4BIT,
+_QUANT_MAP: dict[str, None] = {
+    "roberta-base":                          None,
+    "roberta-large":                         None,
+    "google/bert_uncased_L-2_H-128_A-2":    None,
+    "google/bert_uncased_L-4_H-256_A-4":    None,
+    "google/bert_uncased_L-4_H-512_A-8":    None,
+    "bert-base-uncased":                     None,
+    "bert-large-uncased":                    None,
+    # "meta-llama/Llama-3.2-1B":            _BNBCONFIG_4BIT,
+    # "meta-llama/Llama-3.2-3B":            _BNBCONFIG_4BIT,
 }
 
 
@@ -106,10 +116,8 @@ def get_lora_model(
     model_cfg = MODEL_REGISTRY[model_name]
     base = _load_base_model(model_name, task_type, num_labels, quantize=True)
 
-    if _QUANT_MAP.get(model_name) is not None:
-        # Casts LayerNorms to fp32 and enables gradient checkpointing; required
-        # before LoRA adapters are attached to a quantized model.
-        base = prepare_model_for_kbit_training(base)
+    # if _QUANT_MAP.get(model_name) is not None:
+    #     base = prepare_model_for_kbit_training(base)
 
     lora_cfg = LoraConfig(
         r=rank,
