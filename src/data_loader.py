@@ -233,6 +233,11 @@ def build_dataset(
     """Return a tokenised HuggingFace Dataset ready for wrapping in a DataLoader."""
     raw = load_raw_dataset(task, split)
 
+    if split == "train" and task.max_train_samples is not None:
+        raw = raw.select(range(min(task.max_train_samples, len(raw))))
+    elif split == "validation" and task.max_eval_samples is not None:
+        raw = raw.select(range(min(task.max_eval_samples, len(raw))))
+
     if task.task_type == "classification":
         ds = raw.map(
             _tokenize_classification,
