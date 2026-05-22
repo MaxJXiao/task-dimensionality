@@ -149,9 +149,8 @@ class TaskConfig:
     max_eval_samples: Optional[int] = None
 
 
-# TODO: set both back to None for full-dataset runs
-MAX_TRAIN_SAMPLES: Optional[int] = 2000
-MAX_EVAL_SAMPLES:  Optional[int] = 500
+MAX_TRAIN_SAMPLES: Optional[int] = None
+MAX_EVAL_SAMPLES:  Optional[int] = None
 
 
 TASKS: List[TaskConfig] = [
