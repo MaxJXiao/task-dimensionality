@@ -37,7 +37,7 @@ from src.data_loader import get_dataloaders
 
 BATCH_SIZE_CLS: int = 32
 BATCH_SIZE_SQUAD: int = 16     # SQuAD sequences are 384 tokens; half the batch to stay within memory
-BATCH_SIZE_CAUSAL_LM: int = 4  # 1024-token sequences + 1B QLoRA model
+BATCH_SIZE_CAUSAL_LM: int = 32
 
 # SQuAD 2.0 post-processing
 _N_BEST: int = 20              # top-20 start/end pairs is standard; more gives diminishing returns
