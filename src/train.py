@@ -20,15 +20,15 @@ import csv
 import os
 from dataclasses import replace
 
+import evaluate as hf_evaluate
 import numpy as np
 import torch
-from torch.optim import AdamW
-from transformers import get_linear_schedule_with_warmup
-import evaluate as hf_evaluate
 from datasets import load_dataset
+from torch.optim import AdamW
 from tqdm import tqdm
+from transformers import get_linear_schedule_with_warmup
 
-from src.config import TaskConfig, TrainingConfig, TRAINING, MODEL_REGISTRY
+from src.config import MODEL_REGISTRY, TRAINING, TaskConfig, TrainingConfig
 from src.data_loader import get_dataloaders
 
 # ---------------------------------------------------------------------------
@@ -37,7 +37,7 @@ from src.data_loader import get_dataloaders
 
 BATCH_SIZE_CLS: int = 32
 BATCH_SIZE_SQUAD: int = 16     # SQuAD sequences are 384 tokens; half the batch to stay within memory
-BATCH_SIZE_CAUSAL_LM: int = 16
+BATCH_SIZE_CAUSAL_LM: int = 32
 
 # SQuAD 2.0 post-processing
 _N_BEST: int = 20              # top-20 start/end pairs is standard; more gives diminishing returns
