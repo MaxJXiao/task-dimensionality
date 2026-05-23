@@ -22,32 +22,30 @@ Entry points
 
 from __future__ import annotations
 
-# import torch  # re-enable for _BNBCONFIG_4BIT when Llama models are active
+import torch
 from transformers import (
     AutoModelForSequenceClassification,
     AutoModelForQuestionAnswering,
-    # BitsAndBytesConfig,  # re-enable when Llama models are active
+    AutoModelForCausalLM,
+    BitsAndBytesConfig,
 )
-from peft import LoraConfig, TaskType, get_peft_model, PeftModel  # , prepare_model_for_kbit_training
+from peft import LoraConfig, TaskType, get_peft_model, PeftModel, prepare_model_for_kbit_training
 
-from src.config import MODEL_REGISTRY, DEFAULT_MODEL
+from src.config import MODEL_REGISTRY, DEFAULT_MODEL, LORA_ALPHA_MULTIPLIER, LORA_DROPOUT
 
 
 # ---------------------------------------------------------------------------
-# Quantization configs (bitsandbytes) — re-enable when Llama models are active
+# Quantization configs (bitsandbytes)
 # ---------------------------------------------------------------------------
 
-# _BNBCONFIG_8BIT = BitsAndBytesConfig(load_in_8bit=True)
+_BNBCONFIG_4BIT = BitsAndBytesConfig(
+    load_in_4bit=True,
+    bnb_4bit_compute_dtype=torch.float16,
+    bnb_4bit_quant_type="nf4",
+    bnb_4bit_use_double_quant=True,
+)
 
-# _BNBCONFIG_4BIT = BitsAndBytesConfig(
-#     load_in_4bit=True,
-#     bnb_4bit_compute_dtype=torch.float16,
-#     bnb_4bit_quant_type="nf4",
-#     bnb_4bit_use_double_quant=True,
-# )
-
-# Maps each supported model to its quantization config (None = no quantization).
-_QUANT_MAP: dict[str, None] = {
+_QUANT_MAP = {
     "roberta-base":                          None,
     "roberta-large":                         None,
     "google/bert_uncased_L-2_H-128_A-2":    None,
@@ -55,7 +53,7 @@ _QUANT_MAP: dict[str, None] = {
     "google/bert_uncased_L-4_H-512_A-8":    None,
     "bert-base-uncased":                     None,
     "bert-large-uncased":                    None,
-    # "meta-llama/Llama-3.2-1B":            _BNBCONFIG_4BIT,
+    "meta-llama/Llama-3.2-1B":              _BNBCONFIG_4BIT,
     # "meta-llama/Llama-3.2-3B":            _BNBCONFIG_4BIT,
 }
 
@@ -84,6 +82,8 @@ def _load_base_model(model_name: str, task_type: str, num_labels: int, quantize:
         )
     elif task_type == "span_extraction":
         return AutoModelForQuestionAnswering.from_pretrained(model_name, **kwargs)
+    elif task_type == "causal_lm":
+        return AutoModelForCausalLM.from_pretrained(model_name, **kwargs)
     else:
         raise ValueError(f"Unknown task_type: {task_type!r}")
 
@@ -93,6 +93,8 @@ def _peft_task_type(task_type: str) -> TaskType:
         return TaskType.SEQ_CLS
     elif task_type == "span_extraction":
         return TaskType.QUESTION_ANS
+    elif task_type == "causal_lm":
+        return TaskType.CAUSAL_LM
     raise ValueError(f"Unknown task_type: {task_type!r}")
 
 
@@ -116,8 +118,8 @@ def get_lora_model(
     model_cfg = MODEL_REGISTRY[model_name]
     base = _load_base_model(model_name, task_type, num_labels, quantize=True)
 
-    # if _QUANT_MAP.get(model_name) is not None:
-    #     base = prepare_model_for_kbit_training(base)
+    if _QUANT_MAP.get(model_name) is not None:
+        base = prepare_model_for_kbit_training(base)
 
     if variant == "attn":
         target_modules = model_cfg.lora_attn_modules
@@ -128,8 +130,8 @@ def get_lora_model(
 
     lora_cfg = LoraConfig(
         r=rank,
-        lora_alpha=rank * 2,   # effective scale = alpha/r = 2; constant across all ranks
-        lora_dropout=0.1,
+        lora_alpha=int(rank * LORA_ALPHA_MULTIPLIER),
+        lora_dropout=LORA_DROPOUT,
         bias="none",           # training bias terms would break the low-rank structure
         target_modules=target_modules,
         task_type=_peft_task_type(task_type),

@@ -97,14 +97,15 @@ MODELS: List[ModelConfig] = [
         lora_attn_mlp_modules=["query", "key", "value", "dense"],
         max_lora_rank=512,
     ),
-    # ModelConfig(
-    #     hf_name="meta-llama/Llama-3.2-1B",
-    #     params="1B",
-    #     architecture="decoder",
-    #     lora_attn_modules=["q_proj", "v_proj"],
-    #     lora_attn_mlp_modules=["q_proj", "v_proj", "up_proj", "down_proj", "gate_proj"],
-    #     learning_rate=3e-4,
-    # ),
+    ModelConfig(
+        hf_name="meta-llama/Llama-3.2-1B",
+        params="1B",
+        architecture="decoder",
+        lora_attn_modules=["q_proj", "v_proj"],
+        lora_attn_mlp_modules=["q_proj", "v_proj", "up_proj", "down_proj", "gate_proj"],
+        max_lora_rank=512,
+        learning_rate=2e-5,
+    ),
     # ModelConfig(
     #     hf_name="meta-llama/Llama-3.2-3B",
     #     params="3B",
@@ -164,6 +165,8 @@ class TaskConfig:
     max_input_length: int = 128
     max_train_samples: Optional[int] = None    # None → full split
     max_eval_samples: Optional[int] = None
+    num_epochs: Optional[int] = None           # overrides TrainingConfig.num_epochs when set
+    eval_steps: Optional[int] = None           # overrides TrainingConfig.eval_steps when set
 
 
 MAX_TRAIN_SAMPLES: Optional[int] = 10000
@@ -242,6 +245,26 @@ TASKS: List[TaskConfig] = [
         max_input_length=384,                  # QA contexts are longer
         max_train_samples=MAX_TRAIN_SAMPLES,
         max_eval_samples=MAX_EVAL_SAMPLES,
+    ),
+    TaskConfig(
+        name="billsum",
+        display_name="Legislative Summarization",
+        dataset_name="billsum",
+        dataset_config=None,
+        text_column="text",
+        second_text_column=None,
+        label_column="summary",
+        num_labels=0,
+        metric="rougeL",
+        secondary_metric=None,
+        sota_baseline=57.3,                    # Pegasus ROUGE-L on BillSum
+        task_type="causal_lm",
+        label_names=[],
+        max_input_length=1024,                 # total prompt+summary budget
+        max_train_samples=2000,                # deliberate overfitting pressure
+        max_eval_samples=200,                  # keep generation-based eval fast
+        num_epochs=50,
+        eval_steps=250,                        # twice per epoch; generate() is ~75s per eval
     ),
 ]
 

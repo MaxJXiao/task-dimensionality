@@ -41,6 +41,10 @@ def load_raw_dataset(task: TaskConfig, split: str) -> Dataset:
         ds = ds.filter(lambda ex: ex["label"] != -1)
     elif task.name == "squad2":
         ds = load_dataset("rajpurkar/squad_v2", split=split)
+    elif task.name == "billsum":
+        # BillSum has no validation split; use test as the held-out eval set.
+        actual_split = "test" if split == "validation" else split
+        ds = load_dataset("billsum", split=actual_split)
     else:
         ds = load_dataset(task.dataset_name, task.dataset_config, split=split)
     return ds
@@ -200,6 +204,131 @@ def _tokenize_squad_eval(
 
 
 # ---------------------------------------------------------------------------
+# Tokenisation — causal LM (BillSum)
+# ---------------------------------------------------------------------------
+
+_BILLSUM_PROMPT_PREFIX = "Summarize the following US congressional bill:\n\n"
+_BILLSUM_PROMPT_SUFFIX = "\n\nSummary:"
+
+# How many tokens to reserve for the summary in training sequences.
+# The bill text gets the remaining budget after template overhead and summary.
+# Without this split, long bills fill the entire 1024-token budget and leave
+# no supervised summary tokens, making those examples no-ops in the loss.
+_SUMMARY_BUDGET: int = 256
+
+
+def _tokenize_causal_lm_train(
+    examples: dict,
+    tokenizer: PreTrainedTokenizerBase,
+    task: TaskConfig,
+    max_length: int,
+) -> dict:
+    """
+    Tokenise BillSum examples for causal LM training.
+
+    The prompt is built at the token level (prefix + truncated bill text + suffix)
+    so that "\n\nSummary:" is always present even when the bill is long enough to
+    trigger truncation. Naively formatting the full prompt string and truncating
+    from the right silently drops the "Summary:" cue for the majority of BillSum
+    examples, causing the model to predict bill continuations instead of summaries.
+
+    Sequences are right-padded to max_length regardless of tokenizer.padding_side.
+    Labels are -100 for prompt tokens and padding; only summary tokens are supervised.
+    """
+    pad_id = tokenizer.pad_token_id if tokenizer.pad_token_id is not None else tokenizer.eos_token_id
+    eos_id = tokenizer.eos_token_id
+
+    # Tokenize the fixed template pieces once per batch.
+    # prefix includes BOS; suffix and bill text carry no special tokens.
+    prefix_ids: list[int] = tokenizer(
+        _BILLSUM_PROMPT_PREFIX, add_special_tokens=True, return_attention_mask=False,
+    )["input_ids"]
+    suffix_ids: list[int] = tokenizer(
+        _BILLSUM_PROMPT_SUFFIX, add_special_tokens=False, return_attention_mask=False,
+    )["input_ids"]
+    text_budget = max_length - _SUMMARY_BUDGET - len(prefix_ids) - len(suffix_ids)
+
+    text_enc = tokenizer(
+        examples[task.text_column],
+        max_length=text_budget, truncation=True,
+        padding=False, add_special_tokens=False, return_attention_mask=False,
+    )
+    # Reserve 1 slot for EOS so the model learns when to stop generating.
+    summary_enc = tokenizer(
+        examples[task.label_column],
+        max_length=_SUMMARY_BUDGET - 1, truncation=True,
+        padding=False, add_special_tokens=False, return_attention_mask=False,
+    )
+
+    all_input_ids, all_attn, all_labels = [], [], []
+    for t_ids, s_ids in zip(text_enc["input_ids"], summary_enc["input_ids"]):
+        p_ids = prefix_ids + t_ids + suffix_ids
+        if eos_id is not None:
+            s_ids = s_ids + [eos_id]
+        full_ids = p_ids + s_ids
+        plen = len(p_ids)
+        content_len = len(full_ids)
+        pad_len = max_length - content_len
+
+        input_ids = full_ids + [pad_id] * pad_len
+        attn      = [1] * content_len + [0] * pad_len
+        labels    = [-100] * plen + s_ids + [-100] * pad_len
+
+        all_input_ids.append(input_ids)
+        all_attn.append(attn)
+        all_labels.append(labels)
+
+    return {"input_ids": all_input_ids, "attention_mask": all_attn, "labels": all_labels}
+
+
+def _tokenize_causal_lm_eval(
+    examples: dict,
+    tokenizer: PreTrainedTokenizerBase,
+    task: TaskConfig,
+    max_length: int,
+) -> dict:
+    """
+    Tokenise BillSum examples for causal LM evaluation.
+
+    Same prefix/suffix token-level split as train so "Summary:" is always present.
+    Sequences are manually left-padded so generation appends cleanly after the prompt.
+    The reference summary is kept as a string for ROUGE-L computation.
+    """
+    if tokenizer.pad_token_id is None:
+        tokenizer.pad_token = tokenizer.eos_token
+    pad_id = tokenizer.pad_token_id
+
+    prefix_ids: list[int] = tokenizer(
+        _BILLSUM_PROMPT_PREFIX, add_special_tokens=True, return_attention_mask=False,
+    )["input_ids"]
+    suffix_ids: list[int] = tokenizer(
+        _BILLSUM_PROMPT_SUFFIX, add_special_tokens=False, return_attention_mask=False,
+    )["input_ids"]
+    text_budget = max_length - len(prefix_ids) - len(suffix_ids)
+
+    text_enc = tokenizer(
+        examples[task.text_column],
+        max_length=text_budget, truncation=True,
+        padding=False, add_special_tokens=False, return_attention_mask=False,
+    )
+
+    all_input_ids, all_attn = [], []
+    for t_ids in text_enc["input_ids"]:
+        p_ids = prefix_ids + t_ids + suffix_ids
+        pad_len = max_length - len(p_ids)
+        input_ids = [pad_id] * pad_len + p_ids
+        attn      = [0] * pad_len + [1] * len(p_ids)
+        all_input_ids.append(input_ids)
+        all_attn.append(attn)
+
+    return {
+        "input_ids": all_input_ids,
+        "attention_mask": all_attn,
+        "reference": examples[task.label_column],
+    }
+
+
+# ---------------------------------------------------------------------------
 # Custom collate for SQuAD eval
 # ---------------------------------------------------------------------------
 
@@ -273,6 +402,20 @@ def build_dataset(
                 fmt_cols.append("token_type_ids")
             ds.set_format("torch", columns=fmt_cols, output_all_columns=True)
 
+    elif task.task_type == "causal_lm":
+        is_train = split == "train"
+        fn = _tokenize_causal_lm_train if is_train else _tokenize_causal_lm_eval
+        ds = raw.map(
+            fn,
+            batched=True,
+            fn_kwargs={"tokenizer": tokenizer, "task": task, "max_length": task.max_input_length},
+            remove_columns=raw.column_names,
+        )
+        if is_train:
+            ds.set_format("torch", columns=["input_ids", "attention_mask", "labels"])
+        else:
+            ds.set_format("torch", columns=["input_ids", "attention_mask"], output_all_columns=True)
+
     else:
         raise ValueError(f"Unknown task_type: {task.task_type!r}")
 
@@ -307,18 +450,18 @@ def get_dataloaders(
         pin_memory=True,   # async CPU→GPU transfer; free speedup on CUDA
     )
 
-    is_squad_eval = task.task_type == "span_extraction"
+    needs_nonstandard_collate = task.task_type in ("span_extraction", "causal_lm")
     eval_loader = DataLoader(
         eval_ds,
         batch_size=training_cfg.batch_size * 2,
         shuffle=False,
         num_workers=2,
         pin_memory=True,
-        collate_fn=_squad_eval_collate if is_squad_eval else None,
+        collate_fn=_squad_eval_collate if needs_nonstandard_collate else None,
     )
 
     return {
         "train": train_loader,
         "eval": eval_loader,
-        "eval_dataset": eval_ds if is_squad_eval else None,
+        "eval_dataset": eval_ds if task.task_type == "span_extraction" else None,
     }

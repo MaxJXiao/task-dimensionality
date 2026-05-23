@@ -18,6 +18,7 @@ Usage
 from __future__ import annotations
 
 import argparse
+import gc
 import json
 import os
 import sys
@@ -33,7 +34,7 @@ from datasets import load_dataset
 from src.config import LORA_RANKS, INCLUDE_FULL_PARAM_BASELINE, TASK_REGISTRY, MODEL_REGISTRY, DEFAULT_MODEL
 from src.data_loader import get_dataloaders
 from src.model import get_lora_model, get_full_model, trainable_param_summary
-from src.train import train_one_run, evaluate_classification, evaluate_squad
+from src.train import train_one_run, evaluate_classification, evaluate_squad, evaluate_causal_lm, _training_cfg_for_task
 
 # ---------------------------------------------------------------------------
 # Condition list — order: cheapest first so partial runs are still useful
@@ -175,9 +176,12 @@ def _eval_baseline(task, model, tokenizer, device) -> float:
     if not getattr(model, "hf_device_map", None):
         model.to(device)
     model.eval()
-    loaders = get_dataloaders(task, tokenizer)
+    # Use the task-appropriate batch size so causal_lm eval doesn't OOM during generation.
+    loaders = get_dataloaders(task, tokenizer, _training_cfg_for_task(task))
     if task.task_type == "classification":
         return round(evaluate_classification(model, loaders["eval"], task, device), 4)
+    elif task.task_type == "causal_lm":
+        return round(evaluate_causal_lm(model, loaders["eval"], tokenizer, device), 4)
     else:
         raw_val = load_dataset(task.dataset_name, split="validation")
         raw_lookup = {ex["id"]: ex for ex in raw_val}
@@ -312,6 +316,12 @@ def main() -> None:
                 "trainable_pct": param_summary["trainable_pct"],
             }
             _save_summary(summary, summary_path)
+
+            # Free GPU memory before the next run, especially important for Llama/QLoRA.
+            del model
+            gc.collect()
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
 
     total_elapsed = time.time() - experiment_start
     completed = sum(1 for v in summary.values() if v.get("status") == "done")

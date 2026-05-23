@@ -37,6 +37,7 @@ from src.data_loader import get_dataloaders
 
 BATCH_SIZE_CLS: int = 32
 BATCH_SIZE_SQUAD: int = 16     # SQuAD sequences are 384 tokens; half the batch to stay within memory
+BATCH_SIZE_CAUSAL_LM: int = 4  # 1024-token sequences + 1B QLoRA model
 
 # SQuAD 2.0 post-processing
 _N_BEST: int = 20              # top-20 start/end pairs is standard; more gives diminishing returns
@@ -67,9 +68,19 @@ def _save_log(rows: list[dict], out_dir: str) -> None:
 
 
 def _training_cfg_for_task(task: TaskConfig) -> TrainingConfig:
-    """Return a TrainingConfig with the correct batch size for *task*."""
-    batch_size = BATCH_SIZE_SQUAD if task.task_type == "span_extraction" else BATCH_SIZE_CLS
-    return replace(TRAINING, batch_size=batch_size)
+    """Return a TrainingConfig with the correct batch size and epoch count for *task*."""
+    if task.task_type == "span_extraction":
+        batch_size = BATCH_SIZE_SQUAD
+    elif task.task_type == "causal_lm":
+        batch_size = BATCH_SIZE_CAUSAL_LM
+    else:
+        batch_size = BATCH_SIZE_CLS
+    cfg = replace(TRAINING, batch_size=batch_size)
+    if task.num_epochs is not None:
+        cfg = replace(cfg, num_epochs=task.num_epochs)
+    if task.eval_steps is not None:
+        cfg = replace(cfg, eval_steps=task.eval_steps)
+    return cfg
 
 
 # ---------------------------------------------------------------------------
@@ -222,6 +233,50 @@ def evaluate_squad(
 
 
 # ---------------------------------------------------------------------------
+# Evaluation — causal LM / summarization (BillSum)
+# ---------------------------------------------------------------------------
+
+def evaluate_causal_lm(
+    model,
+    eval_loader,
+    tokenizer,
+    device: torch.device,
+    max_new_tokens: int = 512,
+) -> float:
+    """Generate summaries on the eval set and return ROUGE-L."""
+    rouge = hf_evaluate.load("rouge")
+    pad_token_id = tokenizer.pad_token_id if tokenizer.pad_token_id is not None else tokenizer.eos_token_id
+    model.eval()
+    all_preds: list[str] = []
+    all_refs: list[str] = []
+
+    with torch.no_grad():
+        for batch in eval_loader:
+            input_ids = batch["input_ids"].to(device)
+            attention_mask = batch["attention_mask"].to(device)
+            references: list[str] = batch["reference"]
+
+            generated = model.generate(
+                input_ids=input_ids,
+                attention_mask=attention_mask,
+                max_new_tokens=max_new_tokens,
+                pad_token_id=pad_token_id,
+                eos_token_id=tokenizer.eos_token_id,
+                do_sample=False,
+            )
+            new_tokens = generated[:, input_ids.shape[1]:]
+            decoded = tokenizer.batch_decode(new_tokens, skip_special_tokens=True)
+            all_preds.extend(decoded)
+            all_refs.extend(references)
+
+    model.train()
+    # rouge metric returns values in [0, 1]; scale to percentage points for
+    # consistency with all other metrics in this codebase (accuracy, MCC, F1).
+    result = rouge.compute(predictions=all_preds, references=all_refs)
+    return float(result["rougeL"]) * 100
+
+
+# ---------------------------------------------------------------------------
 # Main training loop
 # ---------------------------------------------------------------------------
 
@@ -319,6 +374,10 @@ def train_one_run(
                     test_metric = round(
                         evaluate_classification(model, eval_loader, task, device), 4
                     )
+                elif task.task_type == "causal_lm":
+                    test_metric = round(
+                        evaluate_causal_lm(model, eval_loader, tokenizer, device), 4
+                    )
                 else:
                     f1, em = evaluate_squad(model, eval_loader, eval_dataset, raw_lookup, device)
                     test_metric = round(f1, 4)
@@ -336,6 +395,9 @@ def train_one_run(
     if global_step % training_cfg.eval_steps != 0:
         if task.task_type == "classification":
             final_score = evaluate_classification(model, eval_loader, task, device)
+            log_rows[-1]["test_metric"] = round(final_score, 4)
+        elif task.task_type == "causal_lm":
+            final_score = evaluate_causal_lm(model, eval_loader, tokenizer, device)
             log_rows[-1]["test_metric"] = round(final_score, 4)
         else:
             final_f1, final_em = evaluate_squad(model, eval_loader, eval_dataset, raw_lookup, device)
