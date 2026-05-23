@@ -255,16 +255,16 @@ TASKS: List[TaskConfig] = [
         second_text_column=None,
         label_column="summary",
         num_labels=0,
-        metric="rougeL",
-        secondary_metric=None,
-        sota_baseline=57.3,                    # Pegasus ROUGE-L on BillSum
+        metric="perplexity",
+        secondary_metric="final_rouge",
+        sota_baseline=None,
         task_type="causal_lm",
         label_names=[],
         max_input_length=1024,                 # total prompt+summary budget
         max_train_samples=2000,                # deliberate overfitting pressure
-        max_eval_samples=200,                  # keep generation-based eval fast
+        max_eval_samples=400,
         num_epochs=50,
-        eval_steps=250,                        # twice per epoch; generate() is ~75s per eval
+        eval_steps=100,
     ),
 ]
 

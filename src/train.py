@@ -62,7 +62,7 @@ def _save_log(rows: list[dict], out_dir: str) -> None:
         return
     path = os.path.join(out_dir, "training_log.csv")
     with open(path, "w", newline="") as f:
-        writer = csv.DictWriter(f, fieldnames=["step", "train_loss", "test_metric", "exact_match"])
+        writer = csv.DictWriter(f, fieldnames=["step", "train_loss", "test_metric", "exact_match", "final_rouge"])
         writer.writeheader()
         writer.writerows(rows)
 
@@ -276,6 +276,32 @@ def evaluate_causal_lm(
     return float(result["rougeL"]) * 100
 
 
+def evaluate_perplexity(
+    model,
+    ppl_loader,
+    device: torch.device,
+) -> float:
+    """Forward-pass perplexity on the eval set (no generation required)."""
+    model.eval()
+    total_loss = 0.0
+    total_tokens = 0
+
+    with torch.no_grad():
+        for batch in ppl_loader:
+            input_ids = batch["input_ids"].to(device)
+            attention_mask = batch["attention_mask"].to(device)
+            labels = batch["labels"].to(device)
+            outputs = model(input_ids=input_ids, attention_mask=attention_mask, labels=labels)
+            # outputs.loss is mean NLL over non-masked tokens; recover the sum
+            # so we can compute perplexity over the full eval set.
+            n_tokens = (labels != -100).sum().item()
+            total_loss += outputs.loss.item() * n_tokens
+            total_tokens += n_tokens
+
+    model.train()
+    return float(torch.exp(torch.tensor(total_loss / total_tokens)).item())
+
+
 # ---------------------------------------------------------------------------
 # Main training loop
 # ---------------------------------------------------------------------------
@@ -317,6 +343,7 @@ def train_one_run(
     loaders = get_dataloaders(task, tokenizer, training_cfg)
     train_loader = loaders["train"]
     eval_loader = loaders["eval"]
+    eval_ppl_loader = loaders["eval_ppl"]   # training-fmt eval set for perplexity; None for non-causal tasks
     eval_dataset = loaders["eval_dataset"]  # Dataset | None
 
     # For SQuAD, build a lookup from example_id → raw example (needed to
@@ -376,7 +403,7 @@ def train_one_run(
                     )
                 elif task.task_type == "causal_lm":
                     test_metric = round(
-                        evaluate_causal_lm(model, eval_loader, tokenizer, device), 4
+                        evaluate_perplexity(model, eval_ppl_loader, device), 4
                     )
                 else:
                     f1, em = evaluate_squad(model, eval_loader, eval_dataset, raw_lookup, device)
@@ -388,6 +415,7 @@ def train_one_run(
                 "train_loss": train_loss,
                 "test_metric": test_metric,
                 "exact_match": exact_match,
+                "final_rouge": "",
             })
 
     # If training ended on a non-eval step the last CSV row has no metric;
@@ -397,12 +425,18 @@ def train_one_run(
             final_score = evaluate_classification(model, eval_loader, task, device)
             log_rows[-1]["test_metric"] = round(final_score, 4)
         elif task.task_type == "causal_lm":
-            final_score = evaluate_causal_lm(model, eval_loader, tokenizer, device)
-            log_rows[-1]["test_metric"] = round(final_score, 4)
+            final_ppl = evaluate_perplexity(model, eval_ppl_loader, device)
+            log_rows[-1]["test_metric"] = round(final_ppl, 4)
         else:
             final_f1, final_em = evaluate_squad(model, eval_loader, eval_dataset, raw_lookup, device)
             log_rows[-1]["test_metric"] = round(final_f1, 4)
             log_rows[-1]["exact_match"] = round(final_em, 4)
+
+    # One-shot ROUGE eval at the end of each BillSum run (generation is slow;
+    # we only need it once for final comparison, not every eval step).
+    if task.task_type == "causal_lm":
+        final_rouge = evaluate_causal_lm(model, eval_loader, tokenizer, device)
+        log_rows[-1]["final_rouge"] = round(final_rouge, 4)
 
     _save_log(log_rows, out_dir)
 

@@ -34,7 +34,7 @@ from datasets import load_dataset
 from src.config import LORA_RANKS, INCLUDE_FULL_PARAM_BASELINE, TASK_REGISTRY, MODEL_REGISTRY, DEFAULT_MODEL
 from src.data_loader import get_dataloaders
 from src.model import get_lora_model, get_full_model, trainable_param_summary
-from src.train import train_one_run, evaluate_classification, evaluate_squad, evaluate_causal_lm, _training_cfg_for_task
+from src.train import train_one_run, evaluate_classification, evaluate_squad, evaluate_perplexity, _training_cfg_for_task
 
 # ---------------------------------------------------------------------------
 # Condition list — order: cheapest first so partial runs are still useful
@@ -141,11 +141,15 @@ def _print_run_result(
     sota: float,
     eta_seconds: float | None,
 ) -> None:
-    gap = f"{final_metric - sota:+.2f}" if isinstance(final_metric, float) else "—"
+    if sota is not None and isinstance(final_metric, float):
+        gap = f"{final_metric - sota:+.2f}"
+        sota_str = f"SOTA {sota}, gap {gap}"
+    else:
+        sota_str = "no SOTA baseline"
     eta_str = f"ETA remaining: {_fmt_duration(eta_seconds)}" if eta_seconds else ""
     print(
         f"\n  [DONE] {task_name} | r={rank_label} | "
-        f"final metric={final_metric}  (SOTA {sota}, gap {gap}) | "
+        f"final metric={final_metric}  ({sota_str}) | "
         f"elapsed {_fmt_duration(elapsed)}  {eta_str}\n"
     )
 
@@ -181,7 +185,7 @@ def _eval_baseline(task, model, tokenizer, device) -> float:
     if task.task_type == "classification":
         return round(evaluate_classification(model, loaders["eval"], task, device), 4)
     elif task.task_type == "causal_lm":
-        return round(evaluate_causal_lm(model, loaders["eval"], tokenizer, device), 4)
+        return round(evaluate_perplexity(model, loaders["eval_ppl"], device), 4)
     else:
         raw_val = load_dataset(task.dataset_name, split="validation")
         raw_lookup = {ex["id"]: ex for ex in raw_val}

@@ -172,10 +172,11 @@ def plot_rank_sweep(
         ax.plot(df["step"], df["test_metric"], color=FULL_COLOR, linestyle=FULL_LINESTYLE,
                 linewidth=FULL_LINEWIDTH, alpha=ALPHA, label="Full fine-tune")
 
-    ax.axhline(y=task_cfg.sota_baseline, color=SOTA_COLOR, linestyle=SOTA_LINESTYLE,
-               linewidth=1.5, label=f"Published baseline ({task_cfg.sota_baseline})")
-    ax.axhspan(task_cfg.sota_baseline - REQUISITE_THRESHOLD, task_cfg.sota_baseline,
-               alpha=0.06, color=SOTA_COLOR, label=f"±{REQUISITE_THRESHOLD}-pt threshold")
+    if task_cfg.sota_baseline is not None:
+        ax.axhline(y=task_cfg.sota_baseline, color=SOTA_COLOR, linestyle=SOTA_LINESTYLE,
+                   linewidth=1.5, label=f"Published baseline ({task_cfg.sota_baseline})")
+        ax.axhspan(task_cfg.sota_baseline - REQUISITE_THRESHOLD, task_cfg.sota_baseline,
+                   alpha=0.06, color=SOTA_COLOR, label=f"±{REQUISITE_THRESHOLD}-pt threshold")
     if zero_shot_score is not None:
         ax.axhline(y=zero_shot_score, color=ZEROSHOT_COLOR, linestyle=ZEROSHOT_LINESTYLE,
                    linewidth=ZEROSHOT_LINEWIDTH, alpha=ALPHA,
@@ -274,9 +275,10 @@ def plot_cross_model_rstar(
     )
     ax.set_xlabel("Model", fontsize=12)
     ax.set_ylabel("Requisite rank R*", fontsize=12)
+    baseline_str = f"SOTA baseline: {task_cfg.sota_baseline}" if task_cfg.sota_baseline is not None else "no SOTA baseline"
     ax.set_title(
         f"{task_cfg.display_name} ({task_name}) — requisite rank R* across models\n"
-        f"SOTA baseline: {task_cfg.sota_baseline}   threshold: ±{REQUISITE_THRESHOLD} pts",
+        f"{baseline_str}   threshold: ±{REQUISITE_THRESHOLD} pts",
         fontsize=12,
     )
     ax.grid(True, axis="y", alpha=0.3)
@@ -409,7 +411,7 @@ def print_summary_table(summary_rows: list[dict]) -> None:
         peak = row["peak_metric"]
         em = row.get("exact_match_peak")
         sota = row["sota_baseline"]
-        gap = f"{peak - sota:+.2f}" if peak is not None else "—"
+        gap = f"{peak - sota:+.2f}" if (peak is not None and sota is not None) else "—"
         model_label = MODEL_DISPLAY.get(row["model_slug"], row["model_slug"])
         print(
             model_label.ljust(col_widths["Model"])
@@ -417,7 +419,7 @@ def print_summary_table(summary_rows: list[dict]) -> None:
             + (row["requisite_rank"] or "none").ljust(col_widths["Requisite R*"])
             + (f"{peak:.2f}" if peak is not None else "—").ljust(col_widths["Peak F1/metric"])
             + (f"{em:.2f}" if em is not None else "—").ljust(col_widths["Exact Match"])
-            + str(sota).ljust(col_widths["SOTA baseline"])
+            + (str(sota) if sota is not None else "—").ljust(col_widths["SOTA baseline"])
             + gap
         )
 
@@ -494,7 +496,11 @@ def main() -> None:
                                        zero_shot_scores.get(task_name))
             print(f"[PLOT] {MODEL_DISPLAY.get(model_slug, model_slug)} / {task_cfg.display_name} → {out_path}")
 
-            req_rank, peak = compute_requisite_rank(task_data, task_cfg.sota_baseline)
+            req_rank, peak = (
+                compute_requisite_rank(task_data, task_cfg.sota_baseline)
+                if task_cfg.sota_baseline is not None
+                else (None, None)
+            )
 
             em_peak: float | None = None
             if task_cfg.task_type == "span_extraction":

@@ -358,6 +358,7 @@ def build_dataset(
     task: TaskConfig,
     tokenizer: PreTrainedTokenizerBase,
     split: str,
+    force_train_fmt: bool = False,
 ) -> Dataset:
     """Return a tokenised HuggingFace Dataset ready for wrapping in a DataLoader."""
     raw = load_raw_dataset(task, split)
@@ -403,7 +404,7 @@ def build_dataset(
             ds.set_format("torch", columns=fmt_cols, output_all_columns=True)
 
     elif task.task_type == "causal_lm":
-        is_train = split == "train"
+        is_train = split == "train" or force_train_fmt
         fn = _tokenize_causal_lm_train if is_train else _tokenize_causal_lm_eval
         ds = raw.map(
             fn,
@@ -435,6 +436,8 @@ def get_dataloaders(
     dict with keys:
         "train"        : DataLoader — shuffled, batch_size from training_cfg
         "eval"         : DataLoader — unshuffled, batch_size * 2
+        "eval_ppl"     : DataLoader | None — training-fmt eval set (right-padded,
+                         with labels) for perplexity; only set for causal_lm tasks.
         "eval_dataset" : Dataset | None — full eval Dataset for SQuAD 2.0
                          post-processing (contains offset_mapping, example_id);
                          None for classification tasks.
@@ -460,8 +463,20 @@ def get_dataloaders(
         collate_fn=_squad_eval_collate if needs_nonstandard_collate else None,
     )
 
+    eval_ppl_loader = None
+    if task.task_type == "causal_lm":
+        ppl_ds = build_dataset(task, tokenizer, split="validation", force_train_fmt=True)
+        eval_ppl_loader = DataLoader(
+            ppl_ds,
+            batch_size=training_cfg.batch_size * 2,
+            shuffle=False,
+            num_workers=2,
+            pin_memory=True,
+        )
+
     return {
         "train": train_loader,
         "eval": eval_loader,
+        "eval_ppl": eval_ppl_loader,
         "eval_dataset": eval_ds if task.task_type == "span_extraction" else None,
     }
