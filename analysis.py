@@ -75,9 +75,10 @@ ALL_MODEL_SLUGS: list[str] = [m.hf_name.replace("/", "--") for m in MODELS]
 def load_results(
     task_name: str | None = None,
     model_slug: str | None = None,
+    variant: str = "attn",
 ) -> dict[tuple[str, str, str], pd.DataFrame]:
     """
-    Load all training_log.csv files from results/{model_slug}/{task}/{rank}/.
+    Load all training_log.csv files from results/{model_slug}/{variant}/{task}/{rank}/.
 
     Returns a dict keyed by (model_slug, task_name, rank_label) whose values
     are DataFrames with columns [step, train_loss, test_metric], filtered to
@@ -85,7 +86,7 @@ def load_results(
     """
     task_glob = task_name or "*"
     model_glob = model_slug or "*"
-    pattern = str(RESULTS_DIR / model_glob / task_glob / "*" / "training_log.csv")
+    pattern = str(RESULTS_DIR / model_glob / variant / task_glob / "*" / "training_log.csv")
     paths = glob.glob(pattern)
 
     if not paths:
@@ -93,8 +94,8 @@ def load_results(
 
     data: dict[tuple[str, str, str], pd.DataFrame] = {}
     for path in sorted(paths):
-        parts = Path(path).parts  # (..., model_slug, task, rank, "training_log.csv")
-        m_slug, task, rank = parts[-4], parts[-3], parts[-2]
+        parts = Path(path).parts  # (..., model_slug, variant, task, rank, "training_log.csv")
+        m_slug, task, rank = parts[-5], parts[-3], parts[-2]
 
         df = pd.read_csv(path)
         df = df[df["test_metric"].notna() & (df["test_metric"] != "")]
@@ -113,9 +114,9 @@ def load_results(
 # Zero-shot scores
 # ---------------------------------------------------------------------------
 
-def load_zero_shot_scores(model_slug: str) -> dict[str, float]:
+def load_zero_shot_scores(model_slug: str, variant: str = "attn") -> dict[str, float]:
     """Return {task_name: score} for all baseline entries in run_summary.json."""
-    path = RESULTS_DIR / model_slug / "run_summary.json"
+    path = RESULTS_DIR / model_slug / variant / "run_summary.json"
     if not path.exists():
         return {}
     with open(path) as f:
@@ -250,7 +251,6 @@ def plot_cross_model_rstar(
 
     for i, row in enumerate(rows_for_task):
         rstar = row["requisite_rank"]
-        label = MODEL_DISPLAY.get(row["model_slug"], row["model_slug"])
         if rstar is not None:
             rank_val = int(rstar)
             color = _rank_color(rstar, len(LORA_RANKS))
@@ -444,6 +444,13 @@ def parse_args() -> argparse.Namespace:
         choices=list(MODEL_REGISTRY.keys()),
         help="Analyse only this model (default: all). Use HuggingFace model ID.",
     )
+    parser.add_argument(
+        "--variant",
+        type=str,
+        default="attn",
+        choices=["attn", "attn_mlp"],
+        help="LoRA variant to analyse: 'attn' or 'attn_mlp'. Default: attn.",
+    )
     return parser.parse_args()
 
 
@@ -457,8 +464,9 @@ def main() -> None:
     model_slug_filter = args.model.replace("/", "--") if args.model else None
     model_slugs = [model_slug_filter] if model_slug_filter else ALL_MODEL_SLUGS
     task_names = [args.task] if args.task else list(TASK_REGISTRY.keys())
+    variant = args.variant
 
-    all_data = load_results(task_name=args.task, model_slug=model_slug_filter)
+    all_data = load_results(task_name=args.task, model_slug=model_slug_filter, variant=variant)
 
     if not all_data:
         print("No results found. Run run_experiment.py first.")
@@ -468,7 +476,7 @@ def main() -> None:
 
     # --- Per-(model, task) rank sweep plots ---
     for model_slug in model_slugs:
-        zero_shot_scores = load_zero_shot_scores(model_slug)
+        zero_shot_scores = load_zero_shot_scores(model_slug, variant)
         for task_name in task_names:
             task_cfg = TASK_REGISTRY[task_name]
 

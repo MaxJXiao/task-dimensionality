@@ -8,7 +8,7 @@ Design constraints
   overfitting / plateau dynamics are visible.
 - Test-set metric is logged every TrainingConfig.eval_steps optimizer steps.
 - Training loss is logged at every step.
-- One CSV per (task, rank) at results/{task}/{rank}/training_log.csv
+- One CSV per (task, rank) at results/{model}/{variant}/{task}/{rank}/training_log.csv
   with columns: step, train_loss, test_metric.
   Rows where no evaluation occurred have test_metric = "".
 """
@@ -49,9 +49,9 @@ _NULL_SCORE_DIFF: float = 0.0  # neutral threshold: predict null only if it stri
 # I/O helpers
 # ---------------------------------------------------------------------------
 
-def _output_dir(task_name: str, rank_label: str | int, model_name: str = "roberta-base") -> str:
+def _output_dir(task_name: str, rank_label: str | int, model_name: str = "roberta-base", variant: str = "attn") -> str:
     model_slug = model_name.replace("/", "--")
-    path = os.path.join("results", model_slug, task_name, str(rank_label))
+    path = os.path.join("results", model_slug, variant, task_name, str(rank_label))
     os.makedirs(path, exist_ok=True)
     return path
 
@@ -218,7 +218,7 @@ def evaluate_squad(
     metric = hf_evaluate.load("squad_v2")
     result = metric.compute(predictions=predictions, references=references)
     model.train()
-    return float(result["f1"]), float(result["exact_match"])
+    return float(result["f1"]), float(result["exact"])
 
 
 # ---------------------------------------------------------------------------
@@ -232,6 +232,7 @@ def train_one_run(
     rank_label: str | int,
     device: torch.device,
     model_name: str = "roberta-base",
+    variant: str = "attn",
 ) -> list[dict]:
     """
     Train *model* on *task* for NUM_EPOCHS and log results.
@@ -244,12 +245,15 @@ def train_one_run(
     model_name:
         HuggingFace model ID. Used to construct the results path so runs for
         different models don't clobber each other.
+    variant:
+        LoRA target scope: "attn" (QKV only) or "attn_mlp" (QKV + dense).
+        Used only for output directory naming.
 
     Returns
     -------
     List of log row dicts (also written to training_log.csv).
     """
-    out_dir = _output_dir(task.name, rank_label, model_name)
+    out_dir = _output_dir(task.name, rank_label, model_name, variant)
     training_cfg = _training_cfg_for_task(task)
     model_cfg = MODEL_REGISTRY[model_name]
     if model_cfg.learning_rate is not None:

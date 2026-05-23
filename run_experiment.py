@@ -7,11 +7,12 @@ Results are saved to results/{task}/{rank}/training_log.csv after each run.
 
 Usage
 -----
-  python run_experiment.py                           # all 32 runs
-  python run_experiment.py --task sst2              # all 8 conditions for SST-2
-  python run_experiment.py --rank 8                 # rank-8 LoRA across all 4 tasks
-  python run_experiment.py --task sst2 --rank full  # single run (debugging)
-  python run_experiment.py --device cpu             # force CPU (slow but useful)
+  python run_experiment.py                                      # all runs, attn variant
+  python run_experiment.py --variant attn_mlp                  # QKV + dense/FFN variant
+  python run_experiment.py --task sst2                         # all ranks for SST-2
+  python run_experiment.py --rank 8                            # rank-8 LoRA across all tasks
+  python run_experiment.py --task sst2 --rank full             # single run (debugging)
+  python run_experiment.py --device cpu                        # force CPU (slow but useful)
 """
 
 from __future__ import annotations
@@ -86,6 +87,13 @@ def parse_args() -> argparse.Namespace:
         default=None,
         metavar="DEVICE",
         help="PyTorch device string, e.g. 'cuda', 'cuda:1', 'cpu'. Default: auto.",
+    )
+    parser.add_argument(
+        "--variant",
+        type=str,
+        default="attn",
+        choices=["attn", "attn_mlp"],
+        help="LoRA target scope: 'attn' (QKV only) or 'attn_mlp' (QKV + dense/FFN). Default: attn.",
     )
     return parser.parse_args()
 
@@ -185,8 +193,9 @@ def main() -> None:
     args = parse_args()
 
     model_name = args.model
+    variant = args.variant
     model_slug = model_name.replace("/", "--")
-    summary_path = os.path.join(RESULTS_DIR, model_slug, "run_summary.json")
+    summary_path = os.path.join(RESULTS_DIR, model_slug, variant, "run_summary.json")
 
     model_cfg = MODEL_REGISTRY[model_name]
 
@@ -212,6 +221,7 @@ def main() -> None:
 
     print(_banner("LoRA Requisite Rank Experiment"))
     print(f"  Base model : {model_name}")
+    print(f"  Variant    : {variant}")
     print(f"  Device     : {device}")
     print(f"  Tasks      : {task_names}")
     print(f"  Ranks      : {rank_conditions}")
@@ -258,7 +268,7 @@ def main() -> None:
             elif rank_label == "full":
                 model = get_full_model(model_name, task.task_type, task.num_labels)
             else:
-                model = get_lora_model(int(rank_label), model_name, task.task_type, task.num_labels)
+                model = get_lora_model(int(rank_label), model_name, task.task_type, task.num_labels, variant)
 
             param_summary = trainable_param_summary(model)
             _print_run_header(run_idx, total_runs, task_name, rank_label, model_name, param_summary)
@@ -271,7 +281,7 @@ def main() -> None:
                 if rank_label == "baseline":
                     final_metric = _eval_baseline(task, model, tokenizer, device)
                 else:
-                    log_rows = train_one_run(task, model, tokenizer, rank_label, device, model_name)
+                    log_rows = train_one_run(task, model, tokenizer, rank_label, device, model_name, variant)
 
                     # Pull the final evaluated metric from the log
                     evaluated = [r for r in log_rows if r["test_metric"] != ""]
@@ -313,7 +323,7 @@ def main() -> None:
     if errors:
         print(f"  Errors     : {errors}  (see traceback output above)")
     print(f"  Summary    : {summary_path}")
-    print(f"  Logs       : {RESULTS_DIR}/{model_slug}/{{task}}/{{rank}}/training_log.csv")
+    print(f"  Logs       : {RESULTS_DIR}/{model_slug}/{variant}/{{task}}/{{rank}}/training_log.csv")
     print()
 
 

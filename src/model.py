@@ -3,19 +3,19 @@ Model loading and LoRA / QLoRA configuration for the rank sweep experiment.
 
 Supported models
 ----------------
-  roberta-base                   125 M   encoder   Standard LoRA   Q/K/V/dense
-  roberta-large                  355 M   encoder   Standard LoRA   Q/K/V/dense
-  bert_uncased_L-2_H-128_A-2      4 M   encoder   Standard LoRA   Q/K/V/dense
-  bert_uncased_L-4_H-256_A-4     11 M   encoder   Standard LoRA   Q/K/V/dense
-  bert_uncased_L-4_H-512_A-8     29 M   encoder   Standard LoRA   Q/K/V/dense
-  bert-base-uncased              110 M   encoder   Standard LoRA   Q/K/V/dense
-  bert-large-uncased             336 M   encoder   Standard LoRA   Q/K/V/dense
-  Llama-3.2-1B                     1 B   decoder   QLoRA  4-bit    q_proj/v_proj
-  Llama-3.2-3B                     3 B   decoder   QLoRA  4-bit    q_proj/v_proj
+  roberta-base                   125 M   encoder   Standard LoRA   attn: Q/K/V   attn_mlp: Q/K/V/dense
+  roberta-large                  355 M   encoder   Standard LoRA   attn: Q/K/V   attn_mlp: Q/K/V/dense
+  bert_uncased_L-2_H-128_A-2      4 M   encoder   Standard LoRA   attn: Q/K/V   attn_mlp: Q/K/V/dense
+  bert_uncased_L-4_H-256_A-4     11 M   encoder   Standard LoRA   attn: Q/K/V   attn_mlp: Q/K/V/dense
+  bert_uncased_L-4_H-512_A-8     29 M   encoder   Standard LoRA   attn: Q/K/V   attn_mlp: Q/K/V/dense
+  bert-base-uncased              110 M   encoder   Standard LoRA   attn: Q/K/V   attn_mlp: Q/K/V/dense
+  bert-large-uncased             336 M   encoder   Standard LoRA   attn: Q/K/V   attn_mlp: Q/K/V/dense
+  Llama-3.2-1B                     1 B   decoder   QLoRA  4-bit    attn: q/v_proj   attn_mlp: q/v/up/down/gate_proj
+  Llama-3.2-3B                     3 B   decoder   QLoRA  4-bit    attn: q/v_proj   attn_mlp: q/v/up/down/gate_proj
 
 Entry points
 ------------
-  get_lora_model(rank, model_name, task_type, num_labels) → PeftModel
+  get_lora_model(rank, model_name, task_type, num_labels, variant) → PeftModel
   get_full_model(model_name, task_type, num_labels)       → base model
   trainable_param_summary(model)                          → dict
 """
@@ -105,13 +105,13 @@ def get_lora_model(
     model_name: str = DEFAULT_MODEL,
     task_type: str = "classification",
     num_labels: int = 2,
+    variant: str = "attn",
 ) -> PeftModel:
     """
     Return a LoRA-wrapped model for any supported model_name.
 
-    Target modules are sourced from MODEL_REGISTRY so each architecture adapts
-    the correct projection matrices. Llama models receive prepare_model_for_kbit_training
-    before LoRA adapters are attached. lora_alpha = 2*rank (standard doubling heuristic).
+    variant="attn"     — QKV projections only
+    variant="attn_mlp" — QKV + all dense layers (attention output + FFN up/down)
     """
     model_cfg = MODEL_REGISTRY[model_name]
     base = _load_base_model(model_name, task_type, num_labels, quantize=True)
@@ -119,12 +119,19 @@ def get_lora_model(
     # if _QUANT_MAP.get(model_name) is not None:
     #     base = prepare_model_for_kbit_training(base)
 
+    if variant == "attn":
+        target_modules = model_cfg.lora_attn_modules
+    elif variant == "attn_mlp":
+        target_modules = model_cfg.lora_attn_mlp_modules
+    else:
+        raise ValueError(f"Unknown LoRA variant: {variant!r}. Choose 'attn' or 'attn_mlp'.")
+
     lora_cfg = LoraConfig(
         r=rank,
         lora_alpha=rank * 2,   # effective scale = alpha/r = 2; constant across all ranks
         lora_dropout=0.1,
         bias="none",           # training bias terms would break the low-rank structure
-        target_modules=model_cfg.lora_target_modules,
+        target_modules=target_modules,
         task_type=_peft_task_type(task_type),
     )
     return get_peft_model(base, lora_cfg)
