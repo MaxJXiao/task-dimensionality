@@ -12,7 +12,8 @@ from typing import List, Optional
 # LoRA sweep
 # ---------------------------------------------------------------------------
 
-LORA_RANKS: List[int] = [1, 2, 4, 8, 16, 32, 64, 128, 256, 512]
+# LORA_RANKS: List[int] = [1, 2, 4, 8, 16, 32, 64, 128, 256, 512]
+LORA_RANKS: List[int] = [1, 4, 16, 64, 256]
 
 LORA_ALPHA_MULTIPLIER: float = 2.0  # alpha = rank * multiplier; keeps effective scale constant across ranks
 LORA_DROPOUT: float = 0.05
@@ -263,8 +264,6 @@ TASKS: List[TaskConfig] = [
         max_input_length=1024,                 # total prompt+summary budget
         max_train_samples=2000,                # deliberate overfitting pressure
         max_eval_samples=400,
-        num_epochs=50,
-        eval_steps=100,
     ),
 ]
 
