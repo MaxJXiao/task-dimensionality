@@ -14,16 +14,13 @@ import re
 from dataclasses import replace
 
 import evaluate as hf_evaluate
-
 import torch
 from datasets import load_dataset
 from torch.optim import AdamW
 from tqdm import tqdm
 from transformers import get_linear_schedule_with_warmup
 
-from src_decoder.data_loader import get_dataloaders
 from src.train import (
-    _output_dir,
     evaluate_causal_lm,
     evaluate_classification,
     evaluate_perplexity,
@@ -38,6 +35,14 @@ from src_decoder.config import (
     TaskConfig,
     TrainingConfig,
 )
+from src_decoder.data_loader import get_dataloaders
+
+
+def _output_dir(task_name: str, rank_label: str | int, model_name: str = "meta-llama/Llama-3.2-1B", variant: str = "attn") -> str:
+    model_slug = model_name.replace("/", "--")
+    path = os.path.join("results", model_slug, variant, task_name, str(rank_label))
+    os.makedirs(path, exist_ok=True)
+    return path
 
 
 def _save_log(rows: list[dict], out_dir: str) -> None:
