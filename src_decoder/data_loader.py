@@ -429,41 +429,45 @@ def get_dataloaders(
     task: TaskConfig,
     tokenizer: PreTrainedTokenizerBase,
     training_cfg: TrainingConfig = TRAINING,
+    eval_only: bool = False,
 ) -> dict:
     if task.task_type not in _DECODER_TASK_TYPES:
         from src.data_loader import get_dataloaders as _get
         return _get(task, tokenizer, training_cfg)
 
     eval_split = getattr(task, "eval_split", "validation")
-    train_ds = build_dataset(task, tokenizer, split="train")
     eval_ds = build_dataset(task, tokenizer, split=eval_split)
     ppl_ds = build_dataset(task, tokenizer, split=eval_split, force_train_fmt=True)
 
-    train_loader = DataLoader(
-        train_ds, batch_size=training_cfg.batch_size,
-        shuffle=True, num_workers=2, pin_memory=True,
-    )
     eval_loader = DataLoader(
         eval_ds, batch_size=training_cfg.batch_size * 2,
-        shuffle=False, num_workers=2, pin_memory=True,
+        shuffle=False, num_workers=0, pin_memory=True,
         collate_fn=_collate_with_strings,
     )
     eval_ppl_loader = DataLoader(
         ppl_ds, batch_size=training_cfg.batch_size * 2,
-        shuffle=False, num_workers=2, pin_memory=True,
+        shuffle=False, num_workers=0, pin_memory=True,
     )
     result = {
-        "train": train_loader,
+        "train": None,
         "eval": eval_loader,
         "eval_ppl": eval_ppl_loader,
         "eval_dataset": None,
         "eval_ood": None,
     }
-    if task.ood_eval is not None:
+
+    if not eval_only:
+        train_ds = build_dataset(task, tokenizer, split="train")
+        result["train"] = DataLoader(
+            train_ds, batch_size=training_cfg.batch_size,
+            shuffle=True, num_workers=0, pin_memory=True,
+        )
+
+    if task.ood_eval is not None and not eval_only:
         ood_ds = build_ood_eval_dataset(task.ood_eval, tokenizer)
         result["eval_ood"] = DataLoader(
             ood_ds, batch_size=training_cfg.batch_size * 2,
-            shuffle=False, num_workers=2, pin_memory=True,
+            shuffle=False, num_workers=0, pin_memory=True,
             collate_fn=_collate_with_strings,
         )
     return result

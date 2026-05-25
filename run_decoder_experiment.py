@@ -200,7 +200,7 @@ def _eval_baseline(task, model, tokenizer, device) -> float:
     if not getattr(model, "hf_device_map", None):
         model.to(device)
     model.eval()
-    loaders = get_dataloaders(task, tokenizer, _training_cfg_for_task(task))
+    loaders = get_dataloaders(task, tokenizer, _training_cfg_for_task(task), eval_only=True)
     if task.task_type == "classification":
         return round(evaluate_classification(model, loaders["eval"], task, device), 4)
     elif task.task_type == "causal_lm":
@@ -225,7 +225,7 @@ def _eval_baseline_ood(task, model, tokenizer, device) -> float | None:
     ood_ds = build_ood_eval_dataset(task.ood_eval, tokenizer)
     ood_loader = DataLoader(
         ood_ds, batch_size=4,
-        shuffle=False, num_workers=2, pin_memory=True,
+        shuffle=False, num_workers=0, pin_memory=True,
         collate_fn=_collate_with_strings,
     )
     if task.task_type == "code_generation":
