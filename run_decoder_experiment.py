@@ -314,7 +314,7 @@ def main() -> None:
             elif rank_label == "full":
                 model = get_full_model(model_name, task.task_type, task.num_labels)
             else:
-                model = get_lora_model(int(rank_label), model_name, task.task_type, task.num_labels, run_variant)
+                model = get_lora_model(int(rank_label), model_name, task.task_type, task.num_labels, variant)
 
             param_summary = trainable_param_summary(model)
             _print_run_header(run_idx, total_runs, task_name, rank_label, model_name, param_summary)
