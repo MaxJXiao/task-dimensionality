@@ -243,7 +243,10 @@ def main() -> None:
     model_name = args.model
     variant = args.variant
     model_slug = model_name.replace("/", "--")
-    summary_path = os.path.join(RESULTS_DIR, model_slug, variant, "run_summary.json")
+    # Test runs get their own subfolder — separate from real results and never
+    # skipped due to a cached "done" entry from a previous test or full run.
+    run_variant = f"{variant}_test" if args.test else variant
+    summary_path = os.path.join(RESULTS_DIR, model_slug, run_variant, "run_summary.json")
 
     model_cfg = MODEL_REGISTRY[model_name]
 
@@ -267,7 +270,7 @@ def main() -> None:
 
     print(_banner("LoRA Decoder Rank Experiment  (fp16, no QLoRA)"))
     print(f"  Base model : {model_name}")
-    print(f"  Variant    : {variant}")
+    print(f"  Variant    : {run_variant}")
     print(f"  Device     : {device}")
     print(f"  Tasks      : {task_names}")
     print(f"  Ranks      : {rank_conditions}")
@@ -311,7 +314,7 @@ def main() -> None:
             elif rank_label == "full":
                 model = get_full_model(model_name, task.task_type, task.num_labels)
             else:
-                model = get_lora_model(int(rank_label), model_name, task.task_type, task.num_labels, variant)
+                model = get_lora_model(int(rank_label), model_name, task.task_type, task.num_labels, run_variant)
 
             param_summary = trainable_param_summary(model)
             _print_run_header(run_idx, total_runs, task_name, rank_label, model_name, param_summary)
@@ -326,7 +329,7 @@ def main() -> None:
                     final_metric = _eval_baseline(task, model, tokenizer, device)
                     final_metric_ood = _eval_baseline_ood(task, model, tokenizer, device)
                 else:
-                    log_rows = train_one_run(task, model, tokenizer, rank_label, device, model_name, variant)
+                    log_rows = train_one_run(task, model, tokenizer, rank_label, device, model_name, run_variant)
                     evaluated = [r for r in log_rows if r["test_metric"] != ""]
                     if evaluated:
                         final_metric = evaluated[-1]["test_metric"]
@@ -377,7 +380,7 @@ def main() -> None:
     if errors:
         print(f"  Errors     : {errors}  (see traceback output above)")
     print(f"  Summary    : {summary_path}")
-    print(f"  Logs       : {RESULTS_DIR}/{model_slug}/{variant}/{{task}}/{{rank}}/training_log.csv")
+    print(f"  Logs       : {RESULTS_DIR}/{model_slug}/{run_variant}/{{task}}/{{rank}}/training_log.csv")
     print()
 
 
