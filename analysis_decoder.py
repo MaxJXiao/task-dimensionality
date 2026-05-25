@@ -35,8 +35,12 @@ from matplotlib.lines import Line2D
 
 from src_decoder.config import LORA_RANKS, TASK_REGISTRY, MODELS, MODEL_REGISTRY
 
-RESULTS_DIR = Path("results")
-PLOTS_DIR = Path("plots") / "decoder"
+_DEFAULT_RESULTS_DIR = Path("results")
+_DEFAULT_PLOTS_DIR = Path("plots") / "decoder"
+
+# Set at runtime by parse_args → main()
+RESULTS_DIR = _DEFAULT_RESULTS_DIR
+PLOTS_DIR = _DEFAULT_PLOTS_DIR
 
 RANK_CMAP = cm.plasma
 FULL_COLOR = "black"
@@ -322,6 +326,14 @@ def parse_args() -> argparse.Namespace:
         help="HuggingFace model ID (default: all)",
     )
     parser.add_argument("--variant", type=str, default="attn", choices=["attn", "attn_mlp"])
+    parser.add_argument(
+        "--results_dir", type=str, default=None,
+        help="Path to results directory (default: ./results). Use Google Drive path in Colab.",
+    )
+    parser.add_argument(
+        "--output_dir", type=str, default=None,
+        help="Path to plots output directory (default: ./plots/decoder). Use Google Drive path in Colab.",
+    )
     return parser.parse_args()
 
 
@@ -330,7 +342,13 @@ def parse_args() -> argparse.Namespace:
 # ---------------------------------------------------------------------------
 
 def main() -> None:
+    global RESULTS_DIR, PLOTS_DIR
     args = parse_args()
+    if args.results_dir:
+        RESULTS_DIR = Path(args.results_dir)
+    if args.output_dir:
+        PLOTS_DIR = Path(args.output_dir)
+
     variant = args.variant
     model_slugs = [args.model.replace("/", "--")] if args.model else ALL_MODEL_SLUGS
     task_names = [args.task] if args.task else list(TASK_REGISTRY.keys())

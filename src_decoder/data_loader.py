@@ -101,7 +101,8 @@ def _tokenize_generative_qa_eval(examples, tokenizer, task, max_length):
     )
 
     # normalized_aliases covers spelling variants; use them for EM/F1 matching
-    all_aliases = examples[task.label_column]["normalized_aliases"]
+    # examples[label_column] is a list of dicts in batched map — must iterate
+    all_aliases = [ans["normalized_aliases"] for ans in examples[task.label_column]]
 
     all_input_ids, all_attn, all_gold = [], [], []
     for q_ids, aliases in zip(question_enc["input_ids"], all_aliases):

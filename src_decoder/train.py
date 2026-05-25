@@ -314,6 +314,8 @@ def train_one_run(
                 "final_em_math": "",
                 "final_f1": "",
             })
+            if global_step % training_cfg.eval_steps == 0:
+                _save_log(log_rows, out_dir)
 
     if global_step % training_cfg.eval_steps != 0:
         if task.task_type == "classification":
