@@ -50,7 +50,9 @@ def _tokenize_generative_qa_train(examples, tokenizer, task, max_length):
     question_budget = max_length - _QA_ANSWER_BUDGET - len(prefix_ids) - len(suffix_ids) - 1
 
     # TriviaQA: label_column is "answer", a struct column; "value" holds the canonical answer
-    answers = examples[task.label_column]["value"]
+    # answers = examples[task.label_column]["value"]
+    # To this:
+    answers = [ans["value"] for ans in examples[task.label_column]]
 
     question_enc = tokenizer(
         examples[task.text_column],
