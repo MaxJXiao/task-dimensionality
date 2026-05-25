@@ -10,7 +10,6 @@ once the decoder task suite is finalised.
 from dataclasses import dataclass, field
 from typing import List, Optional
 
-
 # ---------------------------------------------------------------------------
 # LoRA sweep
 # ---------------------------------------------------------------------------
@@ -105,7 +104,7 @@ TRAINING = TrainingConfig()
 
 BATCH_SIZE_CLS: int = 8
 BATCH_SIZE_SQUAD: int = 4
-BATCH_SIZE_CAUSAL_LM: int = 4
+BATCH_SIZE_CAUSAL_LM: int = 8
 
 
 # ---------------------------------------------------------------------------
