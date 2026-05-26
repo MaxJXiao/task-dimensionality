@@ -134,19 +134,42 @@ def _quality_mask(df: pd.DataFrame) -> pd.Series:
 
 
 def _ppl_rows(df: pd.DataFrame) -> pd.DataFrame:
-    """Eval perplexity rows (test_metric), excluding the final quality-metric row."""
-    ppl_df = df[~_quality_mask(df)].copy()
+    """Eval perplexity rows. Real PPL is always > 1; filters out task-metric values
+    written into test_metric by older log format."""
+    ppl_df = df.copy()
     ppl_df["test_metric"] = pd.to_numeric(ppl_df["test_metric"], errors="coerce")
-    return ppl_df.dropna(subset=["test_metric"])
+    return ppl_df[ppl_df["test_metric"] > 1.0].dropna(subset=["test_metric"])
 
 
 def _train_ppl_rows(df: pd.DataFrame) -> pd.DataFrame:
-    """Training perplexity (exp(train_loss)) for every step except the final quality row."""
-    train_df = df[~_quality_mask(df)].copy()
+    """Training perplexity (exp(train_loss)) for every step."""
+    train_df = df.copy()
     train_df["train_loss"] = pd.to_numeric(train_df["train_loss"], errors="coerce")
     train_df = train_df.dropna(subset=["train_loss"])
     train_df["train_ppl"] = np.exp(train_df["train_loss"])
-    return train_df
+    return train_df[train_df["train_ppl"] > 1.0]
+
+
+_TASK_METRIC_COL = {
+    "code_generation": "final_pass_at_1",
+    "math_reasoning": "final_em_math",
+    "generative_qa": "final_f1",
+}
+_TASK_METRIC_LABEL = {
+    "code_generation": "Pass@1 (%)",
+    "math_reasoning": "Exact Match (%)",
+    "generative_qa": "F1 (%)",
+}
+
+
+def _task_metric_rows(df: pd.DataFrame, task_type: str) -> pd.DataFrame:
+    """Per-step task quality metric rows (populated at every eval step in new log format)."""
+    col = _TASK_METRIC_COL.get(task_type)
+    if col is None or col not in df.columns:
+        return pd.DataFrame()
+    result = df.copy()
+    result[col] = pd.to_numeric(result[col], errors="coerce")
+    return result.dropna(subset=[col])
 
 
 def _final_metrics(df: pd.DataFrame, task_type: str) -> dict[str, float | None]:
@@ -179,7 +202,16 @@ def plot_ppl_curves(
     out_dir: Path,
     variant: str = "attn",
 ) -> Path:
-    fig, ax = plt.subplots(figsize=(10, 6))
+    task_metric_col = _TASK_METRIC_COL.get(task_cfg.task_type)
+    has_task_metric = task_metric_col is not None and any(
+        not _task_metric_rows(df, task_cfg.task_type).empty for df in rank_dfs.values()
+    )
+
+    if has_task_metric:
+        fig, (ax, ax2) = plt.subplots(1, 2, figsize=(18, 6))
+    else:
+        fig, ax = plt.subplots(figsize=(10, 6))
+        ax2 = None
 
     lora_present = [r for r in LORA_RANK_LABELS if r in rank_dfs]
     for rank_label in lora_present:
@@ -202,6 +234,15 @@ def plot_ppl_curves(
                 alpha=ALPHA, label=f"r={rank_label}",
             )
 
+        if ax2 is not None:
+            task_df = _task_metric_rows(df, task_cfg.task_type)
+            if not task_df.empty:
+                ax2.plot(
+                    task_df["step"], task_df[task_metric_col],
+                    color=color, linewidth=RANK_LINEWIDTH,
+                    alpha=ALPHA, label=f"r={rank_label}",
+                )
+
     if "full" in rank_dfs:
         df = rank_dfs["full"]
         train_df = _train_ppl_rows(df)
@@ -218,11 +259,18 @@ def plot_ppl_curves(
                 color=FULL_COLOR, linestyle=FULL_LINESTYLE,
                 linewidth=FULL_LINEWIDTH, alpha=ALPHA, label="Full fine-tune",
             )
+        if ax2 is not None:
+            task_df = _task_metric_rows(df, task_cfg.task_type)
+            if not task_df.empty:
+                ax2.plot(
+                    task_df["step"], task_df[task_metric_col],
+                    color=FULL_COLOR, linestyle=FULL_LINESTYLE,
+                    linewidth=FULL_LINEWIDTH, alpha=ALPHA, label="Full fine-tune",
+                )
 
     sm = cm.ScalarMappable(cmap=RANK_CMAP, norm=plt.Normalize(vmin=LORA_RANKS[0], vmax=LORA_RANKS[-1]))
     sm.set_array([])
-    cbar = fig.colorbar(sm, ax=ax, pad=0.02)
-    cbar.set_label("LoRA rank (r)", fontsize=10)
+    fig.colorbar(sm, ax=ax, pad=0.02).set_label("LoRA rank (r)", fontsize=10)
 
     style_handles = [
         Line2D([0], [0], color="gray", linewidth=RANK_LINEWIDTH, alpha=ALPHA, label="Eval ppl (solid)"),
@@ -234,7 +282,6 @@ def plot_ppl_curves(
         labels=["Eval ppl (solid)", "Train ppl (dashed)"] + existing_labels,
         loc="upper right", fontsize=9, framealpha=0.85,
     )
-
     ax.set_xlabel("Training step", fontsize=12)
     ax.set_ylabel("Perplexity", fontsize=12)
     ax.set_title(
@@ -243,6 +290,20 @@ def plot_ppl_curves(
         fontsize=12,
     )
     ax.grid(True, alpha=0.3)
+
+    if ax2 is not None:
+        metric_label = _TASK_METRIC_LABEL[task_cfg.task_type]
+        handles2, labels2 = ax2.get_legend_handles_labels()
+        if handles2:
+            ax2.legend(handles=handles2, labels=labels2, loc="lower right", fontsize=9, framealpha=0.85)
+        ax2.set_xlabel("Training step", fontsize=12)
+        ax2.set_ylabel(metric_label, fontsize=12)
+        ax2.set_title(
+            f"{task_cfg.display_name} — {metric_label} during training\n"
+            f"model: {MODEL_DISPLAY.get(model_slug, model_slug)}",
+            fontsize=12,
+        )
+        ax2.grid(True, alpha=0.3)
 
     out_dir.mkdir(parents=True, exist_ok=True)
     out_path = out_dir / f"{task_name}_{variant}_ppl_curves.png"

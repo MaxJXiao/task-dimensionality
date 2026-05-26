@@ -330,9 +330,18 @@ def main() -> None:
                     final_metric_ood = _eval_baseline_ood(task, model, tokenizer, device)
                 else:
                     log_rows = train_one_run(task, model, tokenizer, rank_label, device, model_name, run_variant)
-                    evaluated = [r for r in log_rows if r["test_metric"] != ""]
-                    if evaluated:
-                        final_metric = evaluated[-1]["test_metric"]
+                    last = log_rows[-1] if log_rows else {}
+                    task_type = task.task_type
+                    if task_type == "code_generation":
+                        final_metric = last.get("final_pass_at_1") or ""
+                    elif task_type == "math_reasoning":
+                        final_metric = last.get("final_em_math") or ""
+                    elif task_type == "generative_qa":
+                        final_metric = last.get("final_f1") or ""
+                    else:
+                        evaluated = [r for r in log_rows if r["test_metric"] != ""]
+                        if evaluated:
+                            final_metric = evaluated[-1]["test_metric"]
                     ood_rows = [r for r in log_rows if r.get("final_pass_at_1_ood") != ""]
                     if ood_rows:
                         final_metric_ood = ood_rows[-1]["final_pass_at_1_ood"]

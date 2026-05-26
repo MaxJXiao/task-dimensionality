@@ -14,8 +14,8 @@ from typing import List, Optional
 # LoRA sweep
 # ---------------------------------------------------------------------------
 
-LORA_RANKS: List[int] = [1, 4, 16, 64, 256]
-# LORA_RANKS: List[int] = [1]#, 4, 16, 64, 256]
+# LORA_RANKS: List[int] = [1, 4, 16, 64, 256]
+LORA_RANKS: List[int] = [1]#, 4, 16, 64, 256]
 
 
 LORA_ALPHA_MULTIPLIER: float = 2.0
@@ -35,7 +35,7 @@ INCLUDE_FULL_PARAM_BASELINE: bool = True
 
 TEST_TRAIN_SAMPLES: int = 10
 TEST_EVAL_SAMPLES: int = 1
-TEST_EPOCHS: int = 1
+TEST_EPOCHS: int = 2
 TEST_EVAL_STEPS: int = 2
 
 
