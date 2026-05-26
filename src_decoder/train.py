@@ -31,6 +31,7 @@ from src_decoder.config import (
     BATCH_SIZE_CLS,
     BATCH_SIZE_SQUAD,
     MODEL_REGISTRY,
+    PPL_EVAL_STEPS,
     TRAINING,
     TaskConfig,
     TrainingConfig,
@@ -246,6 +247,7 @@ def train_one_run(
     eval_ppl_loader = loaders["eval_ppl"]
     eval_dataset = loaders["eval_dataset"]
     eval_ood_loader = loaders.get("eval_ood")
+    final_eval_loader = loaders.get("final_eval") or eval_loader
 
     raw_lookup: dict[str, dict] | None = None
     if task.task_type == "span_extraction":
@@ -302,24 +304,24 @@ def train_one_run(
             step_em_math: float | str = ""
             step_f1: float | str = ""
 
+            if global_step % PPL_EVAL_STEPS == 0:
+                if task.task_type in ("causal_lm", "code_generation", "generative_qa", "math_reasoning"):
+                    test_metric = round(evaluate_perplexity(model, eval_ppl_loader, device), 4)
+
             if global_step % training_cfg.eval_steps == 0:
                 if task.task_type == "classification":
                     test_metric = round(
                         evaluate_classification(model, eval_loader, task, device), 4
                     )
-                elif task.task_type in ("causal_lm", "code_generation", "generative_qa", "math_reasoning"):
-                    test_metric = round(
-                        evaluate_perplexity(model, eval_ppl_loader, device), 4
-                    )
-                    if task.task_type == "code_generation":
-                        step_pass_at_1 = round(evaluate_pass_at_1(model, eval_loader, tokenizer, device), 4)
-                    elif task.task_type == "math_reasoning":
-                        step_em_math = round(evaluate_math_em(model, eval_loader, tokenizer, device), 4)
-                    elif task.task_type == "generative_qa":
-                        em_val, f1_val = evaluate_generative_qa(model, eval_loader, tokenizer, device)
-                        exact_match = round(em_val, 4)
-                        step_f1 = round(f1_val, 4)
-                else:
+                elif task.task_type == "code_generation":
+                    step_pass_at_1 = round(evaluate_pass_at_1(model, eval_loader, tokenizer, device), 4)
+                elif task.task_type == "math_reasoning":
+                    step_em_math = round(evaluate_math_em(model, eval_loader, tokenizer, device), 4)
+                elif task.task_type == "generative_qa":
+                    em_val, f1_val = evaluate_generative_qa(model, eval_loader, tokenizer, device)
+                    exact_match = round(em_val, 4)
+                    step_f1 = round(f1_val, 4)
+                elif task.task_type == "span_extraction":
                     f1, em = evaluate_squad(model, eval_loader, eval_dataset, raw_lookup, device)
                     test_metric = round(f1, 4)
                     exact_match = round(em, 4)
@@ -335,15 +337,15 @@ def train_one_run(
                 "final_em_math": step_em_math,
                 "final_f1": step_f1,
             })
-            if global_step % training_cfg.eval_steps == 0:
+            if global_step % PPL_EVAL_STEPS == 0:
                 _save_log(log_rows, out_dir)
 
-    # Update PPL on the final row if training didn't end on an eval boundary.
-    if global_step % training_cfg.eval_steps != 0:
-        if task.task_type == "classification":
-            log_rows[-1]["test_metric"] = round(evaluate_classification(model, eval_loader, task, device), 4)
-        elif task.task_type in ("causal_lm", "code_generation", "generative_qa", "math_reasoning"):
+    # Update PPL on the final row if training didn't end on a PPL eval boundary.
+    if global_step % PPL_EVAL_STEPS != 0:
+        if task.task_type in ("causal_lm", "code_generation", "generative_qa", "math_reasoning"):
             log_rows[-1]["test_metric"] = round(evaluate_perplexity(model, eval_ppl_loader, device), 4)
+        elif task.task_type == "classification":
+            log_rows[-1]["test_metric"] = round(evaluate_classification(model, eval_loader, task, device), 4)
         else:
             final_f1, final_em = evaluate_squad(model, eval_loader, eval_dataset, raw_lookup, device)
             log_rows[-1]["test_metric"] = round(final_f1, 4)
@@ -351,17 +353,17 @@ def train_one_run(
 
     # Always run a dedicated final task-metric eval at end of training.
     if task.task_type == "causal_lm":
-        log_rows[-1]["final_rouge"] = round(evaluate_causal_lm(model, eval_loader, tokenizer, device), 4)
+        log_rows[-1]["final_rouge"] = round(evaluate_causal_lm(model, final_eval_loader, tokenizer, device), 4)
     elif task.task_type == "code_generation":
-        final_p1 = evaluate_pass_at_1(model, eval_loader, tokenizer, device)
+        final_p1 = evaluate_pass_at_1(model, final_eval_loader, tokenizer, device)
         log_rows[-1]["final_pass_at_1"] = round(final_p1, 4)
         if eval_ood_loader is not None:
             final_p1_ood = evaluate_pass_at_1(model, eval_ood_loader, tokenizer, device)
             log_rows[-1]["final_pass_at_1_ood"] = round(final_p1_ood, 4)
     elif task.task_type == "math_reasoning":
-        log_rows[-1]["final_em_math"] = round(evaluate_math_em(model, eval_loader, tokenizer, device), 4)
+        log_rows[-1]["final_em_math"] = round(evaluate_math_em(model, final_eval_loader, tokenizer, device), 4)
     elif task.task_type == "generative_qa":
-        em_val, f1_val = evaluate_generative_qa(model, eval_loader, tokenizer, device)
+        em_val, f1_val = evaluate_generative_qa(model, final_eval_loader, tokenizer, device)
         log_rows[-1]["exact_match"] = round(em_val, 4)
         log_rows[-1]["final_f1"] = round(f1_val, 4)
 

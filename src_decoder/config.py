@@ -38,6 +38,8 @@ TEST_EVAL_SAMPLES: int = 1
 TEST_EPOCHS: int = 2
 TEST_EVAL_STEPS: int = 2
 
+PPL_EVAL_STEPS: int = 50
+
 
 # ---------------------------------------------------------------------------
 # Decoder models — plain fp16, no quantization
@@ -201,6 +203,8 @@ class TaskConfig:
     eval_steps: Optional[int] = None
     eval_split: str = "validation"
     ood_eval: Optional[OodEvalConfig] = None
+    final_eval_split: Optional[str] = None
+    max_final_eval_samples: Optional[int] = None
     # prompt template for causal_lm tasks; empty strings give bare text→label format
     prompt_prefix: str = ""
     prompt_suffix: str = ""
@@ -225,9 +229,11 @@ TASKS: List[TaskConfig] = [
         task_type="code_generation",
         max_input_length=512,
         max_train_samples=300,
-        max_eval_samples=74,
+        max_eval_samples=50,
         num_epochs=20,
-        eval_steps=50,
+        eval_steps=150,
+        final_eval_split="test",
+        max_final_eval_samples=None,
         ood_eval=OodEvalConfig(
             dataset_name="openai/openai_humaneval",
             dataset_config=None,
@@ -254,7 +260,7 @@ TASKS: List[TaskConfig] = [
         max_train_samples=1000,
         max_eval_samples=200,
         num_epochs=20,
-        eval_steps=100,
+        eval_steps=300,
         eval_split="test",
     ),
     TaskConfig(
@@ -274,7 +280,7 @@ TASKS: List[TaskConfig] = [
         max_train_samples=1000,
         max_eval_samples=200,
         num_epochs=20,
-        eval_steps=100,
+        eval_steps=300,
     ),
 ]
 TASK_REGISTRY: dict[str, TaskConfig] = {t.name: t for t in TASKS}

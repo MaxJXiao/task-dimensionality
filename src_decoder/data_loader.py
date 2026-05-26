@@ -400,6 +400,7 @@ def build_dataset(
     tokenizer: PreTrainedTokenizerBase,
     split: str,
     force_train_fmt: bool = False,
+    max_samples_override: int | None = None,
 ) -> Dataset:
     if task.task_type not in _DECODER_TASK_TYPES:
         from src.data_loader import build_dataset as _build
@@ -408,8 +409,10 @@ def build_dataset(
     raw = _load_decoder_dataset(task, split)
     if split == "train" and task.max_train_samples is not None:
         raw = raw.select(range(min(task.max_train_samples, len(raw))))
-    elif split != "train" and task.max_eval_samples is not None:
-        raw = raw.select(range(min(task.max_eval_samples, len(raw))))
+    elif split != "train":
+        cap = max_samples_override if max_samples_override is not None else task.max_eval_samples
+        if cap is not None:
+            raw = raw.select(range(min(cap, len(raw))))
 
     is_train = split == "train" or force_train_fmt
     if task.task_type == "code_generation":
@@ -478,4 +481,16 @@ def get_dataloaders(
             shuffle=False, num_workers=0, pin_memory=True,
             collate_fn=_collate_with_strings,
         )
+
+    if task.final_eval_split is not None:
+        final_ds = build_dataset(
+            task, tokenizer, split=task.final_eval_split,
+            max_samples_override=task.max_final_eval_samples,
+        )
+        result["final_eval"] = DataLoader(
+            final_ds, batch_size=training_cfg.batch_size * 2,
+            shuffle=False, num_workers=0, pin_memory=True,
+            collate_fn=_collate_with_strings,
+        )
+
     return result
