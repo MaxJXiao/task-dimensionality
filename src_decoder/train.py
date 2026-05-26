@@ -63,7 +63,7 @@ def evaluate_pass_at_1(
     device: torch.device,
     max_new_tokens: int = 256,
 ) -> float:
-    """Generate one solution per MBPP problem and return pass@1 (%) via evaluate code_eval."""
+    """Generate one solution per problem and return pass@1 (%) via evaluate code_eval."""
     os.environ.setdefault("HF_ALLOW_CODE_EVAL", "1")
     metric = hf_evaluate.load("code_eval")
     pad_id = tokenizer.pad_token_id if tokenizer.pad_token_id is not None else tokenizer.eos_token_id
@@ -89,7 +89,12 @@ def evaluate_pass_at_1(
             new_tokens = generated[:, input_ids.shape[1]:]
             decoded = tokenizer.batch_decode(new_tokens, skip_special_tokens=True)
 
-            for code, tests in zip(decoded, tests_batch):
+            # For HumanEval the prompt IS the function header; the model only generates
+            # the body. Prepend the original prompt so code_eval has a complete program.
+            prompts_batch: list[str] | None = batch.get("prompts")
+            for i, (code, tests) in enumerate(zip(decoded, tests_batch)):
+                if prompts_batch is not None:
+                    code = prompts_batch[i] + code
                 all_predictions.append([code])
                 all_tests.append(tests)
 

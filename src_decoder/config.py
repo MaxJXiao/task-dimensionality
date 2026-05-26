@@ -56,6 +56,15 @@ class ModelConfig:
 
 MODELS: List[ModelConfig] = [
     ModelConfig(
+        hf_name="Qwen/Qwen2.5-0.5B",
+        params="0.5B",
+        architecture="decoder",
+        lora_attn_modules=["q_proj", "v_proj"],
+        lora_attn_mlp_modules=["q_proj", "v_proj", "up_proj", "down_proj", "gate_proj"],
+        max_lora_rank=512,
+        learning_rate=2e-5,
+    ),
+    ModelConfig(
         hf_name="meta-llama/Llama-3.2-1B",
         params="1B",
         architecture="decoder",
@@ -64,9 +73,55 @@ MODELS: List[ModelConfig] = [
         max_lora_rank=512,
         learning_rate=2e-5,
     ),
+    ModelConfig(
+        hf_name="Qwen/Qwen2.5-1.5B",
+        params="1.5B",
+        architecture="decoder",
+        lora_attn_modules=["q_proj", "v_proj"],
+        lora_attn_mlp_modules=["q_proj", "v_proj", "up_proj", "down_proj", "gate_proj"],
+        max_lora_rank=512,
+        learning_rate=2e-5,
+    ),
+    ModelConfig(
+        hf_name="google/gemma-2-2b",
+        params="2B",
+        architecture="decoder",
+        lora_attn_modules=["q_proj", "v_proj"],
+        lora_attn_mlp_modules=["q_proj", "v_proj", "up_proj", "down_proj", "gate_proj"],
+        max_lora_rank=512,
+        learning_rate=2e-5,
+    ),
+    ModelConfig(
+        hf_name="meta-llama/Llama-3.2-3B",
+        params="3B",
+        architecture="decoder",
+        lora_attn_modules=["q_proj", "v_proj"],
+        lora_attn_mlp_modules=["q_proj", "v_proj", "up_proj", "down_proj", "gate_proj"],
+        max_lora_rank=512,
+        learning_rate=2e-5,
+    ),
+    ModelConfig(
+        hf_name="Qwen/Qwen2.5-3B",
+        params="3B",
+        architecture="decoder",
+        lora_attn_modules=["q_proj", "v_proj"],
+        lora_attn_mlp_modules=["q_proj", "v_proj", "up_proj", "down_proj", "gate_proj"],
+        max_lora_rank=512,
+        learning_rate=2e-5,
+    ),
+    # Phi-3-mini uses fused qkv_proj and gate_up_proj instead of separate projections
+    ModelConfig(
+        hf_name="microsoft/Phi-3-mini-4k-instruct",
+        params="3.8B",
+        architecture="decoder",
+        lora_attn_modules=["qkv_proj"],
+        lora_attn_mlp_modules=["qkv_proj", "o_proj", "gate_up_proj", "down_proj"],
+        max_lora_rank=512,
+        learning_rate=2e-5,
+    ),
     # ModelConfig(
-    #     hf_name="meta-llama/Llama-3.2-3B",
-    #     params="3B",
+    #     hf_name="mistralai/Mistral-7B-v0.3",
+    #     params="7B",
     #     architecture="decoder",
     #     lora_attn_modules=["q_proj", "v_proj"],
     #     lora_attn_mlp_modules=["q_proj", "v_proj", "up_proj", "down_proj", "gate_proj"],
@@ -88,7 +143,7 @@ class TrainingConfig:
     learning_rate: float = 2e-5
     batch_size: int = 8
     gradient_accumulation_steps: int = 1
-    num_epochs: int = 20
+    num_epochs: int = 15
     warmup_ratio: float = 0.06
     weight_decay: float = 0.01
     max_grad_norm: float = 1.0
@@ -151,8 +206,8 @@ class TaskConfig:
     prompt_suffix: str = ""
 
 
-MAX_TRAIN_SAMPLES: Optional[int] = 10000
-MAX_EVAL_SAMPLES: Optional[int] = 2000
+MAX_TRAIN_SAMPLES: Optional[int] = 1000
+MAX_EVAL_SAMPLES: Optional[int] = 200
 
 TASKS: List[TaskConfig] = [
     TaskConfig(
@@ -196,8 +251,8 @@ TASKS: List[TaskConfig] = [
         sota_baseline=None,
         task_type="math_reasoning",
         max_input_length=512,
-        max_train_samples=2000,
-        max_eval_samples=400,
+        max_train_samples=1000,
+        max_eval_samples=200,
         num_epochs=20,
         eval_steps=100,
         eval_split="test",
@@ -216,8 +271,8 @@ TASKS: List[TaskConfig] = [
         sota_baseline=None,
         task_type="generative_qa",
         max_input_length=256,
-        max_train_samples=2000,
-        max_eval_samples=400,
+        max_train_samples=1000,
+        max_eval_samples=200,
         num_epochs=20,
         eval_steps=100,
     ),

@@ -326,6 +326,7 @@ def parse_args() -> argparse.Namespace:
         help="HuggingFace model ID (default: all)",
     )
     parser.add_argument("--variant", type=str, default="attn", choices=["attn", "attn_mlp"])
+    parser.add_argument("--test", action="store_true", help="Analyse test-run results (uses {variant}_test subfolder)")
     parser.add_argument(
         "--results_dir", type=str, default=None,
         help="Path to results directory (default: ./results). Use Google Drive path in Colab.",
@@ -349,7 +350,7 @@ def main() -> None:
     if args.output_dir:
         PLOTS_DIR = Path(args.output_dir)
 
-    variant = args.variant
+    variant = f"{args.variant}_test" if args.test else args.variant
     model_slugs = [args.model.replace("/", "--")] if args.model else ALL_MODEL_SLUGS
     task_names = [args.task] if args.task else list(TASK_REGISTRY.keys())
 

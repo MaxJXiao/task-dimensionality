@@ -345,7 +345,15 @@ def _tokenize_humaneval_eval(examples, tokenizer, ood_cfg, max_length):
         all_attn.append([0] * pad_len + [1] * len(p_ids))
         all_tests.append(test_code + f"\ncheck({entry_point})")
 
-    return {"input_ids": all_input_ids, "attention_mask": all_attn, "tests": all_tests}
+    # code_eval runs `prediction + "\n" + reference`; for HumanEval the model only
+    # generates the function body (the prompt already contains the def/docstring), so
+    # we store the original prompt text here and prepend it in evaluate_pass_at_1.
+    return {
+        "input_ids": all_input_ids,
+        "attention_mask": all_attn,
+        "tests": all_tests,
+        "prompts": list(examples[ood_cfg.text_column]),
+    }
 
 
 def build_ood_eval_dataset(ood_cfg: OodEvalConfig, tokenizer: PreTrainedTokenizerBase) -> Dataset:
