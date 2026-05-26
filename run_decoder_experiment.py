@@ -39,6 +39,7 @@ from src.train import evaluate_classification, evaluate_squad, evaluate_perplexi
 from src_decoder.config import (
     INCLUDE_FULL_PARAM_BASELINE,
     LORA_RANKS,
+    LORA_TEST_RANKS,
     MODEL_REGISTRY,
     DEFAULT_MODEL,
     TASK_REGISTRY,
@@ -254,10 +255,12 @@ def main() -> None:
         _validate_rank(args.rank)
         rank_conditions = [args.rank]
     else:
-        rank_conditions = [
-            r for r in ALL_RANKS
-            if r in ("baseline", "full") or int(r) <= model_cfg.max_lora_rank
+        ranks_to_use = LORA_TEST_RANKS if args.test else LORA_RANKS
+        rank_conditions = ["baseline"] + [
+            str(r) for r in ranks_to_use if r <= model_cfg.max_lora_rank
         ]
+        if INCLUDE_FULL_PARAM_BASELINE:
+            rank_conditions.append("full")
 
     task_names = [args.task] if args.task else ALL_TASKS
 

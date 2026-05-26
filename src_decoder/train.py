@@ -17,7 +17,6 @@ import evaluate as hf_evaluate
 import torch
 from datasets import load_dataset
 from torch.optim import AdamW
-from torch.cuda.amp import GradScaler
 from tqdm import tqdm
 from transformers import get_linear_schedule_with_warmup
 
@@ -270,8 +269,9 @@ def train_one_run(
         num_training_steps=total_steps,
     )
 
-    use_scaler = str(rank_label) == "full" and device.type == "cuda"
-    scaler = GradScaler() if use_scaler else None
+    # bf16 has fp32's dynamic range — avoids fp16 overflow in full param training without a scaler
+    if str(rank_label) == "full":
+        model = model.to(torch.bfloat16)
 
     log_rows: list[dict] = []
     global_step = 0
@@ -286,16 +286,9 @@ def train_one_run(
             outputs = model(**batch)
             loss = outputs.loss
 
-            if scaler is not None:
-                scaler.scale(loss).backward()
-                scaler.unscale_(optimizer)
-                torch.nn.utils.clip_grad_norm_(model.parameters(), training_cfg.max_grad_norm)
-                scaler.step(optimizer)
-                scaler.update()
-            else:
-                loss.backward()
-                torch.nn.utils.clip_grad_norm_(model.parameters(), training_cfg.max_grad_norm)
-                optimizer.step()
+            loss.backward()
+            torch.nn.utils.clip_grad_norm_(model.parameters(), training_cfg.max_grad_norm)
+            optimizer.step()
             scheduler.step()
             optimizer.zero_grad()
             global_step += 1
