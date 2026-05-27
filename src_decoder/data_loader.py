@@ -7,7 +7,31 @@ from __future__ import annotations
 
 import re
 import torch
+import numpy as np
 from datasets import Dataset, load_dataset
+
+# datasets bug: TorchFormatter._tensorize does an unconditional
+# `from torchvision.io import VideoReader` which fails on newer torchvision.
+try:
+    import datasets.formatting.torch_formatter as _tvf
+    def _safe_tensorize(self, value):
+        if isinstance(value, (str, bytes, type(None))):
+            return value
+        if isinstance(value, torch.Tensor):
+            return value
+        if isinstance(value, np.ndarray):
+            return torch.from_numpy(value)
+        if isinstance(value, (list, tuple)):
+            try:
+                return torch.tensor(value)
+            except Exception:
+                return value
+        if isinstance(value, (int, float, bool)):
+            return torch.tensor(value)
+        return value
+    _tvf.TorchFormatter._tensorize = _safe_tensorize
+except Exception:
+    pass
 from torch.utils.data import DataLoader
 from transformers import PreTrainedTokenizerBase
 

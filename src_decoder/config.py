@@ -267,7 +267,7 @@ TASKS: List[TaskConfig] = [
     TaskConfig(
         name="trivia_qa",
         display_name="TriviaQA Generative QA",
-        dataset_name="trivia_qa",
+        dataset_name="mandarjoshi/trivia_qa",
         dataset_config="rc",
         text_column="question",
         second_text_column=None,

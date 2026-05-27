@@ -42,10 +42,11 @@ from src_decoder.config import (
 from src_decoder.data_loader import get_dataloaders
 
 
-def _log_eval_schedule(total_steps: int, n_points: int) -> set[int]:
-    """Log-spaced eval steps: dense early, sparse late."""
-    pts = np.unique(np.round(np.geomspace(1, total_steps, n_points)).astype(int))
-    return set(int(s) for s in pts)
+def _log_eval_schedule(total_steps: int, n_points: int, start_frac: float = 0.02) -> set[int]:
+    """Geomspace eval steps: one early canary at step 1, then spread from start_frac*total onward."""
+    start = max(2, int(total_steps * start_frac))
+    pts = np.unique(np.round(np.geomspace(start, total_steps, n_points)).astype(int))
+    return {1} | set(int(s) for s in pts)
 
 
 def _output_dir(task_name: str, rank_label: str | int, model_name: str = "meta-llama/Llama-3.2-1B", variant: str = "attn") -> str:
