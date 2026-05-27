@@ -201,6 +201,7 @@ def plot_ppl_curves(
     rank_dfs: dict[str, pd.DataFrame],
     out_dir: Path,
     variant: str = "attn",
+    zero_shot_scores: dict | None = None,
 ) -> Path:
     task_metric_col = _TASK_METRIC_COL.get(task_cfg.task_type)
     has_task_metric = task_metric_col is not None and any(
@@ -267,6 +268,15 @@ def plot_ppl_curves(
                     color=FULL_COLOR, linestyle=FULL_LINESTYLE,
                     linewidth=FULL_LINEWIDTH, alpha=ALPHA, label="Full fine-tune",
                 )
+
+    if ax2 is not None and zero_shot_scores:
+        zs_indist = zero_shot_scores.get("indist")
+        if zs_indist is not None:
+            ax2.axhline(
+                y=zs_indist, color=ZEROSHOT_COLOR, linestyle=ZEROSHOT_LINESTYLE,
+                linewidth=ZEROSHOT_LINEWIDTH, alpha=ALPHA,
+                label=f"Baseline ({zs_indist:.2f})",
+            )
 
     sm = cm.ScalarMappable(cmap=RANK_CMAP, norm=plt.Normalize(vmin=LORA_RANKS[0], vmax=LORA_RANKS[-1]))
     sm.set_array([])
@@ -437,7 +447,8 @@ def main() -> None:
                 continue
 
             # Perplexity training curves
-            out = plot_ppl_curves(model_slug, task_name, task_cfg, rank_dfs, out_dir, variant)
+            out = plot_ppl_curves(model_slug, task_name, task_cfg, rank_dfs, out_dir, variant,
+                                  zero_shot_scores=zero_shot.get(task_name, {}))
             print(f"[PLOT] {task_cfg.display_name} | ppl curves  → {out}")
 
             # Collect final quality metrics across rank conditions
