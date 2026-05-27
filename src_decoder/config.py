@@ -39,6 +39,7 @@ TEST_EPOCHS: int = 2
 TEST_EVAL_STEPS: int = 2
 
 PPL_EVAL_STEPS: int = 50
+LOG_EVAL_N_POINTS: int = 13  # task-metric evals per run, log-spaced over total steps
 
 
 # ---------------------------------------------------------------------------

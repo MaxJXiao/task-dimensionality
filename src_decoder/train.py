@@ -13,6 +13,8 @@ import os
 import re
 from dataclasses import replace
 
+import numpy as np
+
 import evaluate as hf_evaluate
 import torch
 from datasets import load_dataset
@@ -30,6 +32,7 @@ from src_decoder.config import (
     BATCH_SIZE_CAUSAL_LM,
     BATCH_SIZE_CLS,
     BATCH_SIZE_SQUAD,
+    LOG_EVAL_N_POINTS,
     MODEL_REGISTRY,
     PPL_EVAL_STEPS,
     TRAINING,
@@ -37,6 +40,12 @@ from src_decoder.config import (
     TrainingConfig,
 )
 from src_decoder.data_loader import get_dataloaders
+
+
+def _log_eval_schedule(total_steps: int, n_points: int) -> set[int]:
+    """Log-spaced eval steps: dense early, sparse late."""
+    pts = np.unique(np.round(np.geomspace(1, total_steps, n_points)).astype(int))
+    return set(int(s) for s in pts)
 
 
 def _output_dir(task_name: str, rank_label: str | int, model_name: str = "meta-llama/Llama-3.2-1B", variant: str = "attn") -> str:
@@ -260,6 +269,7 @@ def train_one_run(
     model.train()
 
     total_steps = training_cfg.num_epochs * len(train_loader)
+    eval_steps_set = _log_eval_schedule(total_steps, LOG_EVAL_N_POINTS)
     optimizer = AdamW(
         [p for p in model.parameters() if p.requires_grad],
         lr=training_cfg.learning_rate,
@@ -308,7 +318,7 @@ def train_one_run(
                 if task.task_type in ("causal_lm", "code_generation", "generative_qa", "math_reasoning"):
                     test_metric = round(evaluate_perplexity(model, eval_ppl_loader, device), 4)
 
-            if global_step % training_cfg.eval_steps == 0:
+            if global_step in eval_steps_set:
                 if task.task_type == "classification":
                     test_metric = round(
                         evaluate_classification(model, eval_loader, task, device), 4
