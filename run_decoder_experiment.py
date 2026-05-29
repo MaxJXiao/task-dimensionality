@@ -46,7 +46,6 @@ from src_decoder.config import (
     TEST_TRAIN_SAMPLES,
     TEST_EVAL_SAMPLES,
     TEST_EPOCHS,
-    TEST_EVAL_STEPS,
 )
 from src_decoder.model import get_lora_model, get_full_model, trainable_param_summary
 from src_decoder.train import train_one_run, _training_cfg_for_task, evaluate_pass_at_1, evaluate_generative_qa, evaluate_math_em
@@ -108,8 +107,8 @@ def parse_args() -> argparse.Namespace:
         "--variant",
         type=str,
         default="attn",
-        choices=["attn", "attn_mlp"],
-        help="LoRA target scope: 'attn' (q/v_proj) or 'attn_mlp' (q/v + FFN). Default: attn.",
+        choices=["attn", "attn_mlp", "mlp"],
+        help="LoRA target scope: 'attn' (q/v_proj), 'attn_mlp' (q/v + FFN), or 'mlp' (FFN only). Default: attn.",
     )
     parser.add_argument(
         "--test",
@@ -136,7 +135,6 @@ def _apply_test_mode(task):
         max_train_samples=TEST_TRAIN_SAMPLES,
         max_eval_samples=TEST_EVAL_SAMPLES,
         num_epochs=TEST_EPOCHS,
-        eval_steps=TEST_EVAL_STEPS,
         ood_eval=ood,
     )
 
@@ -281,7 +279,7 @@ def main() -> None:
     print()
 
     if args.test:
-        print(f"  [TEST MODE] {TEST_TRAIN_SAMPLES} train / {TEST_EVAL_SAMPLES} eval samples, {TEST_EPOCHS} epoch, eval_steps={TEST_EVAL_STEPS}\n")
+        print(f"  [TEST MODE] {TEST_TRAIN_SAMPLES} train / {TEST_EVAL_SAMPLES} eval samples, {TEST_EPOCHS} epoch\n")
 
     print(f"Loading tokenizer ({model_name}) ...")
     tokenizer = AutoTokenizer.from_pretrained(model_name)
@@ -341,6 +339,8 @@ def main() -> None:
                         final_metric = last.get("final_em_math") or ""
                     elif task_type == "generative_qa":
                         final_metric = last.get("final_f1") or ""
+                    elif task_type == "causal_lm":
+                        final_metric = last.get("final_rouge") or ""
                     else:
                         evaluated = [r for r in log_rows if r["test_metric"] != ""]
                         if evaluated:

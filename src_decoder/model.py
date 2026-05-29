@@ -73,8 +73,10 @@ def get_lora_model(
         target_modules = model_cfg.lora_attn_modules
     elif variant == "attn_mlp":
         target_modules = model_cfg.lora_attn_mlp_modules
+    elif variant == "mlp":
+        target_modules = model_cfg.lora_mlp_modules
     else:
-        raise ValueError(f"Unknown LoRA variant: {variant!r}. Choose 'attn' or 'attn_mlp'.")
+        raise ValueError(f"Unknown LoRA variant: {variant!r}. Choose 'attn', 'attn_mlp', or 'mlp'.")
 
     lora_cfg = LoraConfig(
         r=rank,

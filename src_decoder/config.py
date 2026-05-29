@@ -39,7 +39,7 @@ TEST_EPOCHS: int = 2
 TEST_EVAL_STEPS: int = 2
 
 PPL_EVAL_STEPS: int = 50
-LOG_EVAL_N_POINTS: int = 13  # task-metric evals per run, log-spaced over total steps
+LOG_EVAL_N_POINTS: int = 50  # task-metric evals per run, log-spaced over total steps
 
 
 # ---------------------------------------------------------------------------
@@ -53,6 +53,7 @@ class ModelConfig:
     architecture: str
     lora_attn_modules: List[str]
     lora_attn_mlp_modules: List[str]
+    lora_mlp_modules: List[str] = field(default_factory=list)
     max_lora_rank: int = 512
     learning_rate: Optional[float] = None
 
@@ -64,6 +65,7 @@ MODELS: List[ModelConfig] = [
         architecture="decoder",
         lora_attn_modules=["q_proj", "v_proj"],
         lora_attn_mlp_modules=["q_proj", "v_proj", "up_proj", "down_proj", "gate_proj"],
+        lora_mlp_modules=["up_proj", "down_proj", "gate_proj"],
         max_lora_rank=512,
         learning_rate=2e-5,
     ),
@@ -73,6 +75,7 @@ MODELS: List[ModelConfig] = [
         architecture="decoder",
         lora_attn_modules=["q_proj", "v_proj"],
         lora_attn_mlp_modules=["q_proj", "v_proj", "up_proj", "down_proj", "gate_proj"],
+        lora_mlp_modules=["up_proj", "down_proj", "gate_proj"],
         max_lora_rank=512,
         learning_rate=2e-5,
     ),
@@ -82,6 +85,7 @@ MODELS: List[ModelConfig] = [
         architecture="decoder",
         lora_attn_modules=["q_proj", "v_proj"],
         lora_attn_mlp_modules=["q_proj", "v_proj", "up_proj", "down_proj", "gate_proj"],
+        lora_mlp_modules=["up_proj", "down_proj", "gate_proj"],
         max_lora_rank=512,
         learning_rate=2e-5,
     ),
@@ -91,6 +95,7 @@ MODELS: List[ModelConfig] = [
         architecture="decoder",
         lora_attn_modules=["q_proj", "v_proj"],
         lora_attn_mlp_modules=["q_proj", "v_proj", "up_proj", "down_proj", "gate_proj"],
+        lora_mlp_modules=["up_proj", "down_proj", "gate_proj"],
         max_lora_rank=512,
         learning_rate=2e-5,
     ),
@@ -100,6 +105,7 @@ MODELS: List[ModelConfig] = [
         architecture="decoder",
         lora_attn_modules=["q_proj", "v_proj"],
         lora_attn_mlp_modules=["q_proj", "v_proj", "up_proj", "down_proj", "gate_proj"],
+        lora_mlp_modules=["up_proj", "down_proj", "gate_proj"],
         max_lora_rank=512,
         learning_rate=2e-5,
     ),
@@ -109,6 +115,7 @@ MODELS: List[ModelConfig] = [
         architecture="decoder",
         lora_attn_modules=["q_proj", "v_proj"],
         lora_attn_mlp_modules=["q_proj", "v_proj", "up_proj", "down_proj", "gate_proj"],
+        lora_mlp_modules=["up_proj", "down_proj", "gate_proj"],
         max_lora_rank=512,
         learning_rate=2e-5,
     ),
@@ -119,6 +126,7 @@ MODELS: List[ModelConfig] = [
         architecture="decoder",
         lora_attn_modules=["qkv_proj"],
         lora_attn_mlp_modules=["qkv_proj", "o_proj", "gate_up_proj", "down_proj"],
+        lora_mlp_modules=["gate_up_proj", "down_proj"],
         max_lora_rank=512,
         learning_rate=2e-5,
     ),
@@ -146,13 +154,12 @@ class TrainingConfig:
     learning_rate: float = 2e-5
     batch_size: int = 8
     gradient_accumulation_steps: int = 1
-    num_epochs: int = 15
+    num_epochs: int = 10
     warmup_ratio: float = 0.06
     weight_decay: float = 0.01
     max_grad_norm: float = 1.0
     fp16: bool = True
     seed: int = 42
-    eval_steps: int = 100
 
 
 TRAINING = TrainingConfig()
@@ -201,8 +208,9 @@ class TaskConfig:
     max_train_samples: Optional[int] = None
     max_eval_samples: Optional[int] = None
     num_epochs: Optional[int] = None
-    eval_steps: Optional[int] = None
     eval_split: str = "validation"
+    train_test_split_for_eval: bool = False  # for datasets with only a "train" split
+    alpaca_format: bool = False  # apply ### Instruction/Input/Response formatting before tokenisation
     ood_eval: Optional[OodEvalConfig] = None
     final_eval_split: Optional[str] = None
     max_final_eval_samples: Optional[int] = None
@@ -211,7 +219,7 @@ class TaskConfig:
     prompt_suffix: str = ""
 
 
-MAX_TRAIN_SAMPLES: Optional[int] = 1000
+MAX_TRAIN_SAMPLES: Optional[int] = 10000
 MAX_EVAL_SAMPLES: Optional[int] = 200
 
 TASKS: List[TaskConfig] = [
@@ -232,7 +240,6 @@ TASKS: List[TaskConfig] = [
         max_train_samples=300,
         max_eval_samples=50,
         num_epochs=20,
-        eval_steps=150,
         final_eval_split="test",
         max_final_eval_samples=None,
         ood_eval=OodEvalConfig(
@@ -258,10 +265,8 @@ TASKS: List[TaskConfig] = [
         sota_baseline=None,
         task_type="math_reasoning",
         max_input_length=512,
-        max_train_samples=1000,
+        max_train_samples=10000,
         max_eval_samples=200,
-        num_epochs=20,
-        eval_steps=300,
         eval_split="test",
     ),
     TaskConfig(
@@ -278,10 +283,28 @@ TASKS: List[TaskConfig] = [
         sota_baseline=None,
         task_type="generative_qa",
         max_input_length=256,
-        max_train_samples=1000,
+        max_train_samples=10000,
         max_eval_samples=200,
-        num_epochs=20,
-        eval_steps=300,
+    ),
+    TaskConfig(
+        name="code_alpaca",
+        display_name="CodeAlpaca-20k Instruction Code Generation",
+        dataset_name="sahil2801/CodeAlpaca-20k",
+        dataset_config=None,
+        text_column="prompt",
+        second_text_column=None,
+        label_column="response",
+        num_labels=1,
+        metric="perplexity",
+        secondary_metric=None,
+        sota_baseline=None,
+        task_type="causal_lm",
+        max_input_length=512,
+        max_train_samples=10000,
+        max_eval_samples=200,
+        eval_split="test",
+        train_test_split_for_eval=True,
+        alpaca_format=True,
     ),
 ]
 TASK_REGISTRY: dict[str, TaskConfig] = {t.name: t for t in TASKS}

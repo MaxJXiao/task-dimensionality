@@ -231,8 +231,6 @@ def _training_cfg_for_task(task: TaskConfig) -> TrainingConfig:
     cfg = replace(TRAINING, batch_size=batch_size)
     if task.num_epochs is not None:
         cfg = replace(cfg, num_epochs=task.num_epochs)
-    if task.eval_steps is not None:
-        cfg = replace(cfg, eval_steps=task.eval_steps)
     return cfg
 
 
@@ -311,6 +309,7 @@ def train_one_run(
 
             test_metric: float | str = ""
             exact_match: float | str = ""
+            step_rouge: float | str = ""
             step_pass_at_1: float | str = ""
             step_em_math: float | str = ""
             step_f1: float | str = ""
@@ -324,6 +323,8 @@ def train_one_run(
                     test_metric = round(
                         evaluate_classification(model, eval_loader, task, device), 4
                     )
+                elif task.task_type == "causal_lm":
+                    step_rouge = round(evaluate_causal_lm(model, eval_loader, tokenizer, device), 4)
                 elif task.task_type == "code_generation":
                     step_pass_at_1 = round(evaluate_pass_at_1(model, eval_loader, tokenizer, device), 4)
                 elif task.task_type == "math_reasoning":
@@ -342,7 +343,7 @@ def train_one_run(
                 "train_loss": train_loss,
                 "test_metric": test_metric,
                 "exact_match": exact_match,
-                "final_rouge": "",
+                "final_rouge": step_rouge,
                 "final_pass_at_1": step_pass_at_1,
                 "final_pass_at_1_ood": "",
                 "final_em_math": step_em_math,

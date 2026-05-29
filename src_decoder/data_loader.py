@@ -54,7 +54,26 @@ _MATH_ANSWER_BUDGET: int = 256  # GSM8K solutions include chain-of-thought
 _CAUSAL_LM_ANSWER_BUDGET: int = 256  # tokens reserved for label / generated output
 
 
+def _format_alpaca_sample(example: dict) -> dict:
+    if example["input"].strip():
+        prompt = (
+            f"### Instruction:\n{example['instruction']}\n\n"
+            f"### Input:\n{example['input']}\n\n"
+            f"### Response:\n"
+        )
+    else:
+        prompt = (
+            f"### Instruction:\n{example['instruction']}\n\n"
+            f"### Response:\n"
+        )
+    return {"prompt": prompt, "response": example["output"]}
+
+
 def _load_decoder_dataset(task: TaskConfig, split: str) -> Dataset:
+    if getattr(task, "train_test_split_for_eval", False):
+        raw = load_dataset(task.dataset_name, split="train")
+        splits = raw.train_test_split(test_size=task.max_eval_samples, seed=TRAINING.seed)
+        return splits["train"] if split == "train" else splits["test"]
     if task.dataset_config is not None:
         return load_dataset(task.dataset_name, task.dataset_config, split=split)
     return load_dataset(task.dataset_name, split=split)
@@ -431,6 +450,8 @@ def build_dataset(
         return _build(task, tokenizer, split, force_train_fmt=force_train_fmt)
 
     raw = _load_decoder_dataset(task, split)
+    if getattr(task, "alpaca_format", False):
+        raw = raw.map(_format_alpaca_sample)
     if split == "train" and task.max_train_samples is not None:
         raw = raw.select(range(min(task.max_train_samples, len(raw))))
     elif split != "train":

@@ -154,11 +154,13 @@ _TASK_METRIC_COL = {
     "code_generation": "final_pass_at_1",
     "math_reasoning": "final_em_math",
     "generative_qa": "final_f1",
+    "causal_lm": "final_rouge",
 }
 _TASK_METRIC_LABEL = {
     "code_generation": "Pass@1 (%)",
     "math_reasoning": "Exact Match (%)",
     "generative_qa": "F1 (%)",
+    "causal_lm": "ROUGE-L (%)",
 }
 
 
@@ -186,6 +188,8 @@ def _final_metrics(df: pd.DataFrame, task_type: str) -> dict[str, float | None]:
         return {"indist": _to_float(last.get("final_em_math")), "ood": None}
     elif task_type == "generative_qa":
         return {"indist": _to_float(last.get("final_f1")), "ood": None}
+    elif task_type == "causal_lm":
+        return {"indist": _to_float(last.get("final_rouge")), "ood": None}
     else:
         return {"indist": _to_float(last.get("test_metric")), "ood": None}
 
@@ -500,6 +504,16 @@ def main() -> None:
                         title=f"{task_cfg.display_name} — F1 vs LoRA rank",
                     )
                     print(f"[PLOT] {task_cfg.display_name} | F1 vs rank    → {out}")
+
+            elif task_cfg.task_type == "causal_lm":
+                if indist_scores:
+                    out = plot_final_metric_vs_rank(
+                        model_slug, "ROUGE-L", indist_scores,
+                        zero_shot_score=zs.get("indist"),
+                        out_path=out_dir / f"{task_name}_{variant}_rank_sweep.png",
+                        title=f"{task_cfg.display_name} — ROUGE-L vs LoRA rank",
+                    )
+                    print(f"[PLOT] {task_cfg.display_name} | ROUGE-L vs rank → {out}")
 
 
 if __name__ == "__main__":
